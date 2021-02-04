@@ -1,5 +1,6 @@
 {
-	"name": "fliplet",
+	"name": "vscode",
+	"publisher": "fliplet",
 	"displayName": "Fliplet Apps",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
 	"version": "0.0.1",
@@ -10,48 +11,78 @@
 		"Other"
 	],
 	"activationEvents": [
-		"onCommand:fliplet.signin"
+		"onCommand:fliplet.signin",
+		"onView:account",
+		"onView:apps"
 	],
 	"main": "./extension.js",
 	"contributes": {
 		"commands": [
 			{
 				"command": "fliplet.signin",
-				"title": "Hello World"
+				"title": "Sign in with Fliplet"
+			},
+			{
+				"command": "apps.refresh",
+				"title": "Refresh",
+				"icon": {
+					"light": "resources/light/refresh.svg",
+					"dark": "resources/dark/refresh.svg"
+				}
+			},
+			{
+				"command": "apps.logout",
+				"title": "Logout",
+				"icon": {
+					"light": "resources/light/logout.svg",
+					"dark": "resources/dark/logout.svg"
+				}
 			}
 		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "apps.refresh",
+					"when": "view == apps",
+					"group": "navigation"
+				},
+				{
+					"command": "apps.logout",
+					"when": "view == apps",
+					"group": "navigation"
+				}
+			]
+		},
 		"viewsWelcome": [
 			{
 				"view": "account",
 				"contents": "You are not logged in. Please log in with your Fliplet account to continue. [Learn more](https://developers.fliplet.com/)\n[Sign in with Fliplet](command:fliplet.signin)"
-			},
-			{
-				"view": "apps",
-				"contents": "Please log in to view your apps."
 			}
 		],
 		"viewsContainers": {
 			"activitybar": [
 				{
-					"id": "apps",
+					"id": "fliplet",
 					"title": "Fliplet",
 					"icon": "media/logo.svg"
 				}
 			]
 		},
 		"views": {
-			"apps": [
+			"fliplet": [
 				{
 					"id": "account",
 					"name": "Account",
 					"icon": "media/logo.svg",
-					"contextualTitle": "Your Fliplet account"
+					"contextualTitle": "Account",
+					"when": "!loggedIn"
 				},
 				{
 					"id": "apps",
 					"name": "Your apps",
 					"icon": "media/logo.svg",
-					"contextualTitle": "Your Fliplet apps"
+					"contextualTitle": "Your Fliplet apps",
+					"when": "loggedIn"
 				}
 			]
 		}
@@ -71,5 +102,10 @@
 		"mocha": "^8.2.1",
 		"typescript": "^4.1.3",
 		"vscode-test": "^1.5.0"
+	},
+	"dependencies": {
+		"axios": "^0.21.1",
+		"keytar": "^7.3.0",
+		"lodash": "^4.17.20"
 	}
 }
