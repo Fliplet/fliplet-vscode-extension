@@ -2,6 +2,9 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 const axios = require("axios").default;
 const _ = require("lodash");
@@ -31,31 +34,29 @@ function getNodeModule<T>(moduleName: string): T | undefined {
 }
 
 const keytar = getNodeModule<typeof keytarType>("keytar");
-import { AppsProvider } from "./apps-provider";
+import { AppsProvider, FileExplorer } from "./apps-provider";
 
 const extensionId = "fliplet.vscode";
 
-let API: any;
 let statusBarItem: vscode.StatusBarItem;
 
-const state = {
-  apps: [],
-  user: {
-    email: String,
-    fullName: String
-  },
-  organization: {
-    name: String
-  }
-};
+const state = require("./state");
 
-const tree = new AppsProvider(state, API);
+let tree: FileExplorer;
 
 const baseURL = "https://api.fliplet.test/";
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
+  tree = new FileExplorer(context);
+
+  try {
+    fs.mkdirSync(path.join(os.tmpdir(), 'fliplet'));
+  } catch (err) {
+    vscode.window.showErrorMessage(err);
+  }
+
   // Register a URI handler for the authentication callback
   vscode.window.registerUriHandler({
     handleUri: function (uri) {
@@ -101,7 +102,6 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 }
 
-vscode.window.registerTreeDataProvider("apps", tree);
 vscode.commands.registerCommand("apps.refresh", function () {
   fetchApps();
 });
@@ -110,11 +110,14 @@ vscode.commands.registerCommand("apps.settings", async function () {
   const quickPick = vscode.window.createQuickPick();
 
   quickPick.items = [
-    { label: 'Log out from your account', detail: `You are currently logged in as ${state.user.email}` }
+    {
+      label: "Log out from your account",
+      detail: `You are currently logged in as ${state.user.email}`,
+    },
   ];
 
-  quickPick.onDidChangeSelection(([{label}]) => {
-    if (label.indexOf('Log out') === 0) {
+  quickPick.onDidChangeSelection(([{ label }]) => {
+    if (label.indexOf("Log out") === 0) {
       logout();
     }
 
@@ -124,7 +127,7 @@ vscode.commands.registerCommand("apps.settings", async function () {
 });
 
 async function logout() {
-  await API.post("v1/auth/logout");
+  await state.api.post("v1/auth/logout");
 
   if (keytar) {
     keytar.deletePassword(extensionId, "authToken");
@@ -136,27 +139,22 @@ async function logout() {
     statusBarItem.hide();
   }
 
-  vscode.window.showInformationMessage('You have been logged out from your account.');
+  vscode.window.showInformationMessage(
+    "You have been logged out from your account."
+  );
 }
 
 vscode.commands.registerCommand("apps.logout", logout);
 
 async function fetchApps() {
-  const apps = (await API.get("v1/apps")).data.apps;
+  const apps = (await state.api.get("v1/apps")).data.apps;
 
   state.apps = apps;
   tree.refresh();
 }
 
 async function verify(authToken: string) {
-  /*return vscode.window.withProgress({
-    location: vscode.ProgressLocation.Window,
-    cancellable: false,
-    title: 'Fliplet'
-	}).then(async (progress) => {
-  */
-
-  API = axios.create({
+  state.api = axios.create({
     baseURL: "https://api.fliplet.test/",
     headers: { "Auth-token": authToken, "X-Third-Party": extensionId },
   });
@@ -164,9 +162,9 @@ async function verify(authToken: string) {
   vscode.commands.executeCommand("setContext", "loggedIn", true);
 
   try {
-    state.user = (await API.get("v1/user")).data.user;
+    state.user = (await state.api.get("v1/user")).data.user;
     state.organization = _.first(
-      (await API.get("v1/organizations")).data.organizations
+      (await state.api.get("v1/organizations")).data.organizations
     );
 
     if (keytar) {
@@ -184,7 +182,9 @@ async function verify(authToken: string) {
     //statusBarItem.command = 'extension.sayHello';
     statusBarItem.show();
 
-    vscode.window.showInformationMessage(`Logged in as ${state.user.fullName}. Welcome back!`);
+    vscode.window.showInformationMessage(
+      `Logged in as ${state.user.fullName}. Welcome back!`
+    );
 
     fetchApps();
   } catch (err) {
