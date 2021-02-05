@@ -40,6 +40,13 @@ let statusBarItem: vscode.StatusBarItem;
 
 const state = {
   apps: [],
+  user: {
+    email: String,
+    fullName: String
+  },
+  organization: {
+    name: String
+  }
 };
 
 const tree = new AppsProvider(state, API);
@@ -99,7 +106,24 @@ vscode.commands.registerCommand("apps.refresh", function () {
   fetchApps();
 });
 
-vscode.commands.registerCommand("apps.logout", async function () {
+vscode.commands.registerCommand("apps.settings", async function () {
+  const quickPick = vscode.window.createQuickPick();
+
+  quickPick.items = [
+    { label: 'Log out from your account', detail: `You are currently logged in as ${state.user.email}` }
+  ];
+
+  quickPick.onDidChangeSelection(([{label}]) => {
+    if (label.indexOf('Log out') === 0) {
+      logout();
+    }
+
+    quickPick.hide();
+  });
+  quickPick.show();
+});
+
+async function logout() {
   await API.post("v1/auth/logout");
 
   if (keytar) {
@@ -111,7 +135,11 @@ vscode.commands.registerCommand("apps.logout", async function () {
   if (statusBarItem) {
     statusBarItem.hide();
   }
-});
+
+  vscode.window.showInformationMessage('You have been logged out from your account.');
+}
+
+vscode.commands.registerCommand("apps.logout", logout);
 
 async function fetchApps() {
   const apps = (await API.get("v1/apps")).data.apps;
@@ -136,8 +164,8 @@ async function verify(authToken: string) {
   vscode.commands.executeCommand("setContext", "loggedIn", true);
 
   try {
-    const user = (await API.get("v1/user")).data.user;
-    const organization = _.first(
+    state.user = (await API.get("v1/user")).data.user;
+    state.organization = _.first(
       (await API.get("v1/organizations")).data.organizations
     );
 
@@ -152,9 +180,11 @@ async function verify(authToken: string) {
       );
     }
 
-    statusBarItem.text = `${user.fullName} (${organization.name})`;
+    statusBarItem.text = `${state.user.fullName} (${state.organization.name})`;
     //statusBarItem.command = 'extension.sayHello';
     statusBarItem.show();
+
+    vscode.window.showInformationMessage(`Logged in as ${state.user.fullName}. Welcome back!`);
 
     fetchApps();
   } catch (err) {

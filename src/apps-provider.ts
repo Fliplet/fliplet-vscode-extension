@@ -31,7 +31,7 @@ class App extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
     super(app.label, collapsibleState);
-    this.tooltip = `Last update ${moment(app.updatedAt).fromNow()}`;
+    this.tooltip = `Last updated ${moment(app.updatedAt).fromNow()}`;
     this.description = app.name;
   }
 

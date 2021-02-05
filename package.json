@@ -31,11 +31,11 @@
 				}
 			},
 			{
-				"command": "apps.logout",
-				"title": "Logout",
+				"command": "apps.settings",
+				"title": "Settings",
 				"icon": {
-					"light": "resources/light/logout.svg",
-					"dark": "resources/dark/logout.svg"
+					"light": "resources/light/settings.svg",
+					"dark": "resources/dark/settings.svg"
 				}
 			}
 		],
@@ -47,7 +47,7 @@
 					"group": "navigation"
 				},
 				{
-					"command": "apps.logout",
+					"command": "apps.settings",
 					"when": "view == apps",
 					"group": "navigation"
 				}
