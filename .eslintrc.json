@@ -8,6 +8,14 @@
     "plugins": [
         "@typescript-eslint"
     ],
+    "overrides": [
+        {
+          "files": ["dist/extension.js"],
+          "rules": {
+            "require-jsdoc": "off"
+          }
+        }
+      ],
     "rules": {
         "@typescript-eslint/naming-convention": "warn",
         "@typescript-eslint/semi": "warn",

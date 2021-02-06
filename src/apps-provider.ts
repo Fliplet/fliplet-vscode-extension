@@ -3,9 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+
 import * as moment from "moment";
 
 const _ = require("lodash");
+const md5: Function = require('md5');
 const temp = require("fs-temp");
 
 const state = require("./state");
@@ -254,10 +256,10 @@ class App extends vscode.TreeItem {
         this.pages.unshift(
           new File({
             label: "Global CSS",
-            type: "css",
+            type: "scss",
             content: _.get(this.app, "settings.customSCSS"),
             app: this.appData,
-            ext: "css",
+            ext: "scss",
           })
         );
 
@@ -292,7 +294,7 @@ class File extends vscode.TreeItem {
     this.app = data.app;
     this.page = data.page;
     this.ext = data.ext;
-    this.tooltip = "Click to edit";
+    this.tooltip = "";
   }
 
   command = {
@@ -316,6 +318,11 @@ const myProvider = new (class implements vscode.TextDocumentContentProvider {
   }
 })();
 
+function fileHash(path: string) {
+  const name = _.last(path.toLowerCase().split('fliplet'));
+  return md5(name);
+}
+
 export class FileExplorer {
   treeDataProvider: AppsProvider;
 
@@ -324,6 +331,53 @@ export class FileExplorer {
     context.subscriptions.push(
       vscode.window.createTreeView("apps", { treeDataProvider })
     );
+
+    vscode.workspace.onWillSaveTextDocument((event) => {
+      const hash = fileHash(event.document.fileName);
+      const data: any = context.workspaceState.get(hash);
+
+      if (!data) {
+        return;
+      }
+
+      // TODO: progress
+      let op;
+
+      if (data.pageId) {
+        if (data.ext === 'js' || data.ext === 'css') {
+          op = state.api.post(`v1/apps/${data.appId}/pages/${data.pageId}/settings`, {
+            data: {
+              [`custom${data.ext.toUppercase()}`]: event.document.getText()
+            }
+          });
+        } else if (data.ext === 'html') {
+          op = state.api.put(`v1/apps/${data.appId}/pages/${data.pageId}/rich-content`, {
+            data: {
+              richLayout: event.document.getText()
+            }
+          });
+        }
+      } else {
+        op = state.api.post(`v1/apps/${data.appId}/settings`, {
+          data: {
+            [`custom${data.ext.toUppercase()}`]: event.document.getText()
+          }
+        });
+      }
+
+      event.waitUntil(op);
+
+      op.then(() => {
+
+      }).catch(() => {
+
+      });
+    });
+
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      context.workspaceState.update(fileHash(doc.fileName), undefined);
+    });
+
     vscode.commands.registerCommand("apps.openFile", async (file: File) => {
       if (!file.uri) {
         try {
@@ -362,6 +416,12 @@ export class FileExplorer {
 
           file.uri = path.join(basePath, fileName);
 
+          context.workspaceState.update(fileHash(file.uri), {
+            ext: file.ext,
+            appId: file.app.id,
+            pageId: file.page ? file.page.id : undefined
+          });
+
           fs.writeFileSync(file.uri, file.content || "");
         } catch (err) {
           console.error(err);
@@ -373,23 +433,14 @@ export class FileExplorer {
         return;
       }
 
-      let doc = await vscode.workspace.openTextDocument(file.uri); // calls back into the provider
-      const d = await vscode.window.showTextDocument(doc, { preview: false });
+      const doc = await vscode.workspace.openTextDocument(file.uri);
+      const editor = await vscode.window.showTextDocument(doc, { preview: false });
 
       vscode.languages.setTextDocumentLanguage(
-        d.document,
+        editor.document,
         file.type.toString()
       );
-
-      return;
-
-      /*
-      vscode.window.showTextDocument(file.uri, { preview: false }).then((doc) => {
-        vscode.languages.setTextDocumentLanguage(doc.document, "JavaScript");
-      });*/
     });
-
-    vscode.workspace.registerTextDocumentContentProvider("fliplet", myProvider);
 
     this.treeDataProvider = treeDataProvider;
   }
@@ -402,7 +453,5 @@ export class FileExplorer {
     this.treeDataProvider.refresh();
   }
 }
-
-// vscode.window.registerTreeDataProvider("apps", tree);
 
 vscode.commands.registerCommand("file.edit", function () {});
