@@ -109,19 +109,44 @@ vscode.commands.registerCommand("apps.refresh", function () {
 vscode.commands.registerCommand("apps.settings", async function () {
   const quickPick = vscode.window.createQuickPick();
 
-  quickPick.items = [
+  const items = [
     {
       label: "Log out from your account",
       detail: `You are currently logged in as ${state.user.email}`,
     },
   ];
 
-  quickPick.onDidChangeSelection(([{ label }]) => {
+  if (state.user.userRoleId === 1) {
+    items.push({
+      label: "Impersonate a user",
+      detail: `Impersonate another Fliplet Studio user`,
+    });
+  }
+
+  quickPick.items = items;
+
+  quickPick.onDidChangeSelection(async ([{ label }]) => {
+    quickPick.hide();
+
     if (label.indexOf("Log out") === 0) {
       logout();
-    }
+    } else if (label.indexOf('Impersonate') === 0) {
+      const users = (await state.api.get('v1/admin/users')).data.users;
 
-    quickPick.hide();
+      const usersPick = vscode.window.createQuickPick();
+
+      usersPick.items = users.map((user: any) => {
+        return {
+          label: `${user.id} - ${_.compact(user.firstName, user.lastName).join(' ')} (${user.email})`
+        };
+      });
+
+      usersPick.onDidChangeSelection(async ([{ label }]) => {
+
+      });
+
+      usersPick.show();
+    }
   });
   quickPick.show();
 });
@@ -177,17 +202,17 @@ async function verify(authToken: string) {
     },
     async (progress) => {
     try {
-      progress.report({ message: 'Authenticating...', increment: 40 });
+      progress.report({ message: 'Authenticating...', increment: 0 });
 
       state.user = (await state.api.get("v1/user")).data.user;
 
-      progress.report({ message: 'Checking license...', increment: 40 });
+      progress.report({ message: 'Checking account and organization plan...', increment: 20 });
 
       state.organization = _.first(
         (await state.api.get("v1/organizations")).data.organizations
       );
 
-      progress.report({ message: 'Retrieving Apps...', increment: 80 });
+      progress.report({ message: 'Retrieving apps...', increment: 80 });
 
       if (keytar) {
         await keytar.setPassword(extensionId, "authToken", authToken);

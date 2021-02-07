@@ -338,7 +338,7 @@ export class FileExplorer {
 
       await vscode.window.withProgress(
         {
-          location: vscode.ProgressLocation.Notification,
+          location: vscode.ProgressLocation.Window,
           cancellable: false,
           title: "Saving to Fliplet",
         },
@@ -424,7 +424,7 @@ export class FileExplorer {
             os.tmpdir(),
             "Fliplet",
             state.organization.name,
-            file.app.name
+            `${file.app.name.substr(0, 32)}`,
           );
 
           if (!fs.existsSync(basePath)) {
@@ -440,8 +440,8 @@ export class FileExplorer {
               os.tmpdir(),
               "Fliplet",
               state.organization.name,
-              file.app.name,
-              file.page.title
+              `${file.app.name.substr(0, 32)}-${file.app.id}`,
+              `${file.page.title.substr(0, 32)}`
             );
 
             if (!fs.existsSync(basePath)) {
@@ -456,9 +456,9 @@ export class FileExplorer {
           let fileName;
 
           if (file.page) {
-            fileName = file.page.title;
+            fileName = `${file.page.title.substr(0, 32)}-${file.page.id}`;
           } else {
-            fileName = file.app.name;
+            fileName = `${file.app.name.substr(0, 32)}-${file.app.id}`;
           }
 
           fileName += `.${file.ext}`;
