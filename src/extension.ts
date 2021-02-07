@@ -142,6 +142,14 @@ async function logout() {
   vscode.window.showInformationMessage(
     "You have been logged out from your account."
   );
+
+  state.user = {};
+
+  vscode.workspace.textDocuments.forEach((document) => {
+    if (document.fileName.indexOf(state.organization.name) !== -1) {
+
+    }
+  });
 }
 
 vscode.commands.registerCommand("apps.logout", logout);
@@ -161,36 +169,47 @@ async function verify(authToken: string) {
 
   vscode.commands.executeCommand("setContext", "loggedIn", true);
 
-  try {
-    state.user = (await state.api.get("v1/user")).data.user;
-    state.organization = _.first(
-      (await state.api.get("v1/organizations")).data.organizations
-    );
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      cancellable: false,
+      title: "Fliplet",
+    },
+    async (progress) => {
+    try {
+      progress.report({ message: 'Authenticating...', increment: 40 });
 
-    if (keytar) {
-      await keytar.setPassword(extensionId, "authToken", authToken);
-    }
+      state.user = (await state.api.get("v1/user")).data.user;
 
-    if (!statusBarItem) {
-      statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left,
-        1000
+      progress.report({ message: 'Checking license...', increment: 40 });
+
+      state.organization = _.first(
+        (await state.api.get("v1/organizations")).data.organizations
       );
+
+      progress.report({ message: 'Retrieving Apps...', increment: 80 });
+
+      if (keytar) {
+        await keytar.setPassword(extensionId, "authToken", authToken);
+      }
+
+      if (!statusBarItem) {
+        statusBarItem = vscode.window.createStatusBarItem(
+          vscode.StatusBarAlignment.Left,
+          1000
+        );
+      }
+
+      statusBarItem.text = `${state.user.fullName} (${state.organization.name})`;
+      //statusBarItem.command = 'extension.sayHello';
+      statusBarItem.show();
+
+      await fetchApps();
+    } catch (err) {
+      vscode.commands.executeCommand("setContext", "loggedIn", false);
+      console.error(err);
     }
-
-    statusBarItem.text = `${state.user.fullName} (${state.organization.name})`;
-    //statusBarItem.command = 'extension.sayHello';
-    statusBarItem.show();
-
-    vscode.window.showInformationMessage(
-      `Logged in as ${state.user.fullName}. Welcome back!`
-    );
-
-    fetchApps();
-  } catch (err) {
-    vscode.commands.executeCommand("setContext", "loggedIn", false);
-    console.error(err);
-  }
+  });
 }
 
 // this method is called when your extension is deactivated

@@ -3,11 +3,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-
 import * as moment from "moment";
 
 const _ = require("lodash");
-const md5: Function = require('md5');
+const md5: Function = require("md5");
 const temp = require("fs-temp");
 
 const state = require("./state");
@@ -311,15 +310,8 @@ class File extends vscode.TreeItem {
   }
 }
 
-const myProvider = new (class implements vscode.TextDocumentContentProvider {
-  provideTextDocumentContent(uri: vscode.Uri): string {
-    // invoke cowsay, use uri-path as text
-    return "foo";
-  }
-})();
-
 function fileHash(path: string) {
-  const name = _.last(path.toLowerCase().split('fliplet'));
+  const name = _.last(path.toLowerCase().split(state.organization.name));
   return md5(name);
 }
 
@@ -332,46 +324,93 @@ export class FileExplorer {
       vscode.window.createTreeView("apps", { treeDataProvider })
     );
 
-    vscode.workspace.onWillSaveTextDocument((event) => {
+    vscode.workspace.onWillSaveTextDocument(async (event) => {
       const hash = fileHash(event.document.fileName);
       const data: any = context.workspaceState.get(hash);
+
+      if (!state.user.id) {
+        return; // not logged in
+      }
 
       if (!data) {
         return;
       }
 
-      // TODO: progress
-      let op;
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          cancellable: false,
+          title: "Saving to Fliplet",
+        },
+        async (progress) => {
+          progress.report({ increment: 100 });
 
-      if (data.pageId) {
-        if (data.ext === 'js' || data.ext === 'css') {
-          op = state.api.post(`v1/apps/${data.appId}/pages/${data.pageId}/settings`, {
-            data: {
-              [`custom${data.ext.toUppercase()}`]: event.document.getText()
-            }
-          });
-        } else if (data.ext === 'html') {
-          op = state.api.put(`v1/apps/${data.appId}/pages/${data.pageId}/rich-content`, {
-            data: {
-              richLayout: event.document.getText()
-            }
-          });
-        }
-      } else {
-        op = state.api.post(`v1/apps/${data.appId}/settings`, {
-          data: {
-            [`custom${data.ext.toUppercase()}`]: event.document.getText()
+          function updateDoc(text: string) {
+            const edit = new vscode.WorkspaceEdit();
+            const firstLine = event.document.lineAt(0);
+            const lastLine = event.document.lineAt(
+              event.document.lineCount - 1
+            );
+            const textRange = new vscode.Range(
+              firstLine.range.start,
+              lastLine.range.end
+            );
+
+            edit.replace(event.document.uri, textRange, text);
+            vscode.workspace.applyEdit(edit);
           }
-        });
-      }
 
-      event.waitUntil(op);
+          try {
+            if (data.pageId) {
+              if (data.ext === "js" || data.ext === "scss") {
+                if (data.ext === 'js') {
+                  await state.api.post(
+                    `v1/apps/${data.appId}/pages/${data.pageId}/settings`,
+                    {
+                      customJS: event.document.getText(),
+                    }
+                  );
+                } else {
+                  await state.api.post(
+                    `v1/apps/${data.appId}/pages/${data.pageId}/settings`,
+                    {
+                      customSCSS: event.document.getText(),
+                    }
+                  );
+                }
 
-      op.then(() => {
+              } else if (data.ext === "html") {
+                await state.api
+                  .put(
+                    `v1/apps/${data.appId}/pages/${data.pageId}/rich-layout`,
+                    {
+                      richLayout: event.document.getText(),
+                    }
+                  )
+                  .then((response: any) => {
+                    updateDoc(response.data.page.richLayout);
+                  });
+              }
+            } else {
+              if (data.ext === 'js') {
+                await state.api.post(`v1/apps/${data.appId}/settings`, {
+                  customJS: event.document.getText(),
+                });
+              } else if (data.ext === 'scss') {
+                await state.api.post(`v1/apps/${data.appId}/settings`, {
+                  customSCSS: event.document.getText(),
+                });
+              }
+            }
+            treeDataProvider.refresh();
 
-      }).catch(() => {
-
-      });
+            progress.report({ increment: 100 });
+          } catch (e) {
+            console.error(e);
+            vscode.window.showErrorMessage(e);
+          }
+        }
+      );
     });
 
     vscode.workspace.onDidCloseTextDocument((doc) => {
@@ -383,24 +422,34 @@ export class FileExplorer {
         try {
           let basePath = path.join(
             os.tmpdir(),
-            "fliplet",
+            "Fliplet",
+            state.organization.name,
             file.app.name
           );
 
           if (!fs.existsSync(basePath)) {
-            fs.mkdirSync(basePath);
+            try {
+              fs.mkdirSync(basePath, { recursive: true });
+            } catch (e) {
+              console.error(e);
+            }
           }
 
           if (file.page) {
             basePath = path.join(
               os.tmpdir(),
-              "fliplet",
+              "Fliplet",
+              state.organization.name,
               file.app.name,
               file.page.title
             );
 
             if (!fs.existsSync(basePath)) {
-              fs.mkdirSync(basePath);
+              try {
+                fs.mkdirSync(basePath, { recursive: true });
+              } catch (e) {
+                console.error(e);
+              }
             }
           }
 
@@ -419,7 +468,7 @@ export class FileExplorer {
           context.workspaceState.update(fileHash(file.uri), {
             ext: file.ext,
             appId: file.app.id,
-            pageId: file.page ? file.page.id : undefined
+            pageId: file.page ? file.page.id : undefined,
           });
 
           fs.writeFileSync(file.uri, file.content || "");
@@ -434,7 +483,9 @@ export class FileExplorer {
       }
 
       const doc = await vscode.workspace.openTextDocument(file.uri);
-      const editor = await vscode.window.showTextDocument(doc, { preview: false });
+      const editor = await vscode.window.showTextDocument(doc, {
+        preview: false,
+      });
 
       vscode.languages.setTextDocumentLanguage(
         editor.document,
