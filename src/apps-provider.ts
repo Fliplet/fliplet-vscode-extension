@@ -511,10 +511,7 @@ export class FileExplorer {
 
     vscode.commands.registerCommand("page.configureComponent", function (instance: Component) {
       const url = api.interfaceUrl(instance.component.id);
-
-      debugger;
-
-      const title = instance.component.widget.id;
+      const title = instance.component.widget.name;
 
       const panel = vscode.window.createWebviewPanel(
         instance.component.id.toString(),
@@ -655,10 +652,38 @@ function getInteraceWebViewContent(name: string, url: string) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${name}</title>
-    <style>* {border:0;margin:0;padding:0;}</style>
+    <style>
+* {border:0;margin:0;padding:0;}
+body {
+  overflow-x: hidden;
+}
+iframe {
+  background-color: #f8f6f7;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+}
+footer {
+  padding: 1rem 15px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+    </style>
 </head>
 <body>
-  <iframe style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;" src="${url}" width="100%" height="100%"></iframe>
+  <iframe src="${url}" width="100%" height="100%"></iframe>
+  <footer>
+    <a data-save href="#">Save &amp; Close</a>
+  </footer>
 </body>
 </html>`;
 }
