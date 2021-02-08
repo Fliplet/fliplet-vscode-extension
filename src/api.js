@@ -7,6 +7,10 @@ let currentToken;
 
 let baseURL = "https://api.fliplet.com/";
 
+module.exports.baseURL = function () {
+  return baseURL;
+};
+
 module.exports.create = function CreateAPI(authToken) {
   currentToken = authToken;
 

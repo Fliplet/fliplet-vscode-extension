@@ -47,8 +47,6 @@ let currentContext: vscode.ExtensionContext;
 let tree: FileExplorer;
 let dependenciesTree: DependencyExplorer;
 
-const baseURL = "https://api.fliplet.test/";
-
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
@@ -84,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
       );
 
       const uri = vscode.Uri.parse(
-        `${baseURL}v1/auth/third-party?redirect=${encodeURIComponent(
+        `${api.baseURL()}v1/auth/third-party?redirect=${encodeURIComponent(
           callbackUri.toString()
         )}&responseType=code&source=VSCode&title=Sign%20in%20to%20Authorize%20Visual%20Studio%20Code`
       );
