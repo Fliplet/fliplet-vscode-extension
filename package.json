@@ -1,20 +1,28 @@
 {
 	"name": "vscode",
 	"publisher": "fliplet",
-	"displayName": "Fliplet Apps",
+	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "0.0.1",
+	"version": "0.0.3",
 	"engines": {
 		"vscode": "^1.53.0"
 	},
 	"categories": [
 		"Other"
 	],
+	"author": {
+    "name": "Fliplet Apps"
+  },
 	"activationEvents": [
 		"onCommand:fliplet.signin",
 		"onView:account",
 		"onView:apps"
 	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Fliplet/fliplet-vscode-extension"
+	},
+	"icon": "media/icon.png",
 	"main": "./dist/extension.js",
 	"contributes": {
 		"commands": [
@@ -24,19 +32,18 @@
 			},
 			{
 				"command": "apps.refresh",
-				"title": "Refresh",
-				"icon": {
-					"light": "resources/light/refresh.svg",
-					"dark": "resources/dark/refresh.svg"
-				}
+				"title": "Refresh apps list",
+				"icon": "$(refresh)"
 			},
 			{
 				"command": "apps.settings",
-				"title": "Settings",
-				"icon": {
-					"light": "resources/light/settings.svg",
-					"dark": "resources/dark/settings.svg"
-				}
+				"title": "User settings and log out",
+				"icon": "$(accounts-view-bar-icon)"
+			},
+			{
+				"command": "page.preview",
+				"title": "Preview page",
+				"icon": "$(ports-open-browser-icon)"
 			}
 		],
 		"menus": {
@@ -50,6 +57,13 @@
 					"command": "apps.settings",
 					"when": "view == apps",
 					"group": "navigation"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "page.preview",
+					"when": "view == apps && viewItem == screen",
+					"group": "inline"
 				}
 			]
 		},
@@ -83,6 +97,12 @@
 					"icon": "media/logo.svg",
 					"contextualTitle": "Your Fliplet apps",
 					"when": "loggedIn"
+				},
+				{
+					"id": "dependencies",
+					"name": "Libraries",
+					"contextualTitle": "Fliplet dependencies",
+					"when": "hasDependencies"
 				}
 			]
 		}

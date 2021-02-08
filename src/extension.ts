@@ -12,6 +12,9 @@ const _ = require("lodash");
 import { env } from "vscode";
 import * as keytarType from "keytar";
 
+const state = require("./state");
+const api = require("./api");
+
 declare const __webpack_require__: typeof require;
 declare const __non_webpack_require__: typeof require;
 
@@ -34,21 +37,23 @@ function getNodeModule<T>(moduleName: string): T | undefined {
 }
 
 const keytar = getNodeModule<typeof keytarType>("keytar");
-import { AppsProvider, FileExplorer } from "./apps-provider";
+import { FileExplorer } from "./apps-provider";
+import { DependencyExplorer, DependencyProvider } from "./dependencies";
 
 const extensionId = "fliplet.vscode";
 
 let statusBarItem: vscode.StatusBarItem;
-
-const state = require("./state");
-
+let currentContext: vscode.ExtensionContext;
 let tree: FileExplorer;
+let dependenciesTree: DependencyExplorer;
 
 const baseURL = "https://api.fliplet.test/";
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export async function activate(context: vscode.ExtensionContext) {
+  currentContext = context;
+
   tree = new FileExplorer(context);
 
   try {
@@ -98,7 +103,22 @@ export async function activate(context: vscode.ExtensionContext) {
 
     if (authToken) {
       verify(authToken);
+    } else {
+      api.create();
     }
+
+    _.forIn((await state.api.get('v1/widgets/assets')).data.assets, (value: any, name: string) => {
+      if (value.reference) {
+        value.name = name;
+        state.dependencies.push(value);
+      }
+    });
+
+    state.dependencies = _.sortBy(state.dependencies, 'name');
+
+    dependenciesTree = new DependencyExplorer(context);
+
+    vscode.commands.executeCommand("setContext", "hasDependencies", true);
   }
 }
 
@@ -118,8 +138,13 @@ vscode.commands.registerCommand("apps.settings", async function () {
 
   if (state.user.userRoleId === 1) {
     items.push({
-      label: "Impersonate a user",
+      label: "Impersonate a different user",
       detail: `Impersonate another Fliplet Studio user`,
+    });
+  } else if (currentContext.workspaceState.get('isImpersonating')) {
+    items.push({
+      label: "Unimpersonate from this user",
+      detail: `Logs out from the current impersonating session`,
     });
   }
 
@@ -135,19 +160,65 @@ vscode.commands.registerCommand("apps.settings", async function () {
 
       const usersPick = vscode.window.createQuickPick();
 
+      usersPick.matchOnDescription = true;
+      usersPick.matchOnDetail = true;
+
       usersPick.items = users.map((user: any) => {
         return {
-          label: `${user.id} - ${_.compact(user.firstName, user.lastName).join(' ')} (${user.email})`
+          description: user.id.toString(),
+          label: `$(accounts-view-bar-icon) ${_.compact([user.firstName, user.lastName]).join(' ')}`,
+          detail: user.email
         };
       });
 
-      usersPick.onDidChangeSelection(async ([{ label }]) => {
+      usersPick.onDidChangeSelection(async ([{ description }]) => {
+        const userId = description;
+        usersPick.hide();
 
+        const data = (await state.api.post(`/v1/admin/users/${userId}/impersonate`)).data;
+        const authToken = data.session.auth_token;
+
+        if (!keytar) {
+          return;
+        }
+
+        const currentAuthToken: string | any = await keytar.getPassword(
+          extensionId,
+          "authToken"
+        );
+
+        if (currentAuthToken) {
+          await keytar.setPassword(extensionId, "previousAuthToken", currentAuthToken);
+        }
+
+        currentContext.workspaceState.update('isImpersonating', true);
+
+        state.apps = [];
+        tree.refresh();
+
+        await verify(authToken);
       });
 
       usersPick.show();
+    } else if (label.indexOf('Unimpersonate') === 0) {
+      await state.api.post("v1/auth/logout");
+
+      if (keytar) {
+        const previousAuthToken: string | any = await keytar.getPassword(
+          extensionId,
+          "previousAuthToken"
+        );
+
+        if (previousAuthToken) {
+          await keytar.deletePassword(extensionId, 'previousAuthToken');
+          verify(previousAuthToken);
+        } else {
+          vscode.commands.executeCommand("setContext", "loggedIn", false);
+        }
+      }
     }
   });
+
   quickPick.show();
 });
 
@@ -172,7 +243,7 @@ async function logout() {
 
   vscode.workspace.textDocuments.forEach((document) => {
     if (document.fileName.indexOf(state.organization.name) !== -1) {
-
+      // todo: close doc
     }
   });
 }
@@ -187,10 +258,7 @@ async function fetchApps() {
 }
 
 async function verify(authToken: string) {
-  state.api = axios.create({
-    baseURL: "https://api.fliplet.test/",
-    headers: { "Auth-token": authToken, "X-Third-Party": extensionId },
-  });
+  api.create(authToken);
 
   vscode.commands.executeCommand("setContext", "loggedIn", true);
 

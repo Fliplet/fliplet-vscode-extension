@@ -7,5 +7,6 @@ module.exports = {
   },
   organization: {
     name: String
-  }
+  },
+  dependencies: []
 };

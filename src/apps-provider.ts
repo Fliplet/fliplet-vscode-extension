@@ -7,8 +7,8 @@ import * as moment from "moment";
 
 const _ = require("lodash");
 const md5: Function = require("md5");
-const temp = require("fs-temp");
 
+const api = require("./api");
 const state = require("./state");
 
 namespace util {
@@ -189,10 +189,11 @@ class Page extends vscode.TreeItem {
     this.tooltip = `${moment(page.updatedAt).fromNow()}`;
     this.description = this.tooltip;
     this.app = app;
+    this.id = `page-${page.id}`;
     this.pageData = page;
   }
 
-  contextValue = "folder";
+  contextValue = "screen";
   iconPath = vscode.ThemeIcon.Folder;
 
   getChildren() {
@@ -203,7 +204,7 @@ class Page extends vscode.TreeItem {
         content: this.pageData.layout,
         page: this.pageData,
         app: this.app,
-        ext: "html",
+        ext: "html"
       }),
       new File({
         label: "Screen JavaScript",
@@ -237,6 +238,7 @@ class App extends vscode.TreeItem {
     this.tooltip = `Last updated ${moment(app.updatedAt).fromNow()}`;
     this.description = moment(app.updatedAt).fromNow();
     this.appData = app;
+    this.id = `app-${app.id}`;
   }
 
   iconPath = vscode.ThemeIcon.Folder;
@@ -302,7 +304,6 @@ class File extends vscode.TreeItem {
     arguments: [this],
   };
 
-  contextValue = "file";
   iconPath = vscode.ThemeIcon.File;
 
   async getChildren() {
@@ -360,6 +361,9 @@ export class FileExplorer {
             vscode.workspace.applyEdit(edit);
           }
 
+          const app = _.find(state.apps, { id: data.appId });
+          const content = event.document.getText();
+
           try {
             if (data.pageId) {
               if (data.ext === "js" || data.ext === "scss") {
@@ -367,14 +371,14 @@ export class FileExplorer {
                   await state.api.post(
                     `v1/apps/${data.appId}/pages/${data.pageId}/settings`,
                     {
-                      customJS: event.document.getText(),
+                      customJS: content,
                     }
                   );
                 } else {
                   await state.api.post(
                     `v1/apps/${data.appId}/pages/${data.pageId}/settings`,
                     {
-                      customSCSS: event.document.getText(),
+                      customSCSS: content,
                     }
                   );
                 }
@@ -384,7 +388,7 @@ export class FileExplorer {
                   .put(
                     `v1/apps/${data.appId}/pages/${data.pageId}/rich-layout`,
                     {
-                      richLayout: event.document.getText(),
+                      richLayout: content,
                     }
                   )
                   .then((response: any) => {
@@ -394,12 +398,16 @@ export class FileExplorer {
             } else {
               if (data.ext === 'js') {
                 await state.api.post(`v1/apps/${data.appId}/settings`, {
-                  customJS: event.document.getText(),
+                  customJS: content,
                 });
+
+                app.settings.customJS = content;
               } else if (data.ext === 'scss') {
                 await state.api.post(`v1/apps/${data.appId}/settings`, {
-                  customSCSS: event.document.getText(),
+                  customSCSS: content,
                 });
+
+                app.settings.customSCSS = content;
               }
             }
             treeDataProvider.refresh();
@@ -417,6 +425,23 @@ export class FileExplorer {
       context.workspaceState.update(fileHash(doc.fileName), undefined);
     });
 
+    vscode.commands.registerCommand("page.preview", async (page: Page) => {
+      const url = api.previewUrl(page.app.id, page.page.id);
+
+      const title = `${page.pageData.title} (${page.app.name})`;
+
+      const panel = vscode.window.createWebviewPanel(
+        page.pageData.id.toString(),
+        title,
+        vscode.ViewColumn.Two,
+        {
+          enableScripts: true
+        }
+      );
+
+      panel.webview.html = getWebviewContent(title, url);
+    });
+
     vscode.commands.registerCommand("apps.openFile", async (file: File) => {
       if (!file.uri) {
         try {
@@ -424,7 +449,7 @@ export class FileExplorer {
             os.tmpdir(),
             "Fliplet",
             state.organization.name,
-            `${file.app.name.substr(0, 32)}`,
+            `${file.app.name.substr(0, 32)}-${file.app.id}`,
           );
 
           if (!fs.existsSync(basePath)) {
@@ -441,7 +466,7 @@ export class FileExplorer {
               "Fliplet",
               state.organization.name,
               `${file.app.name.substr(0, 32)}-${file.app.id}`,
-              `${file.page.title.substr(0, 32)}`
+              `${file.page.id}`
             );
 
             if (!fs.existsSync(basePath)) {
@@ -456,9 +481,9 @@ export class FileExplorer {
           let fileName;
 
           if (file.page) {
-            fileName = `${file.page.title.substr(0, 32)}-${file.page.id}`;
+            fileName = `${file.page.title.substr(0, 32)}`;
           } else {
-            fileName = `${file.app.name.substr(0, 32)}-${file.app.id}`;
+            fileName = `${file.app.name.substr(0, 32)}`;
           }
 
           fileName += `.${file.ext}`;
@@ -484,7 +509,7 @@ export class FileExplorer {
 
       const doc = await vscode.workspace.openTextDocument(file.uri);
       const editor = await vscode.window.showTextDocument(doc, {
-        preview: false,
+        preview: true,
       });
 
       vscode.languages.setTextDocumentLanguage(
@@ -496,13 +521,24 @@ export class FileExplorer {
     this.treeDataProvider = treeDataProvider;
   }
 
-  private openResource(resource: vscode.Uri): void {
-    vscode.window.showTextDocument(resource);
-  }
-
   refresh() {
     this.treeDataProvider.refresh();
   }
 }
 
 vscode.commands.registerCommand("file.edit", function () {});
+
+function getWebviewContent(name: string, url: string) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${name}</title>
+    <style>* {border:0;margin:0;padding:0;}</style>
+</head>
+<body>
+  <iframe style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;" src="${url}" width="100%" height="100%"></iframe>
+</body>
+</html>`;
+}
