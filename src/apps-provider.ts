@@ -204,7 +204,7 @@ class Page extends vscode.TreeItem {
         content: this.pageData.layout,
         page: this.pageData,
         app: this.app,
-        ext: "html"
+        ext: "html",
       }),
       new File({
         label: "Screen JavaScript",
@@ -222,7 +222,75 @@ class Page extends vscode.TreeItem {
         app: this.app,
         ext: "scss",
       }),
+      new Components(this.page, 1),
     ]);
+  }
+}
+
+class Component extends vscode.TreeItem {
+  constructor(public readonly component: any, public readonly page: any) {
+    super(component.widget ? component.widget.name : component.package, 0);
+  }
+
+  iconPath = new vscode.ThemeIcon("notebook-mimetype");
+
+  command = {
+    title: "Configure component",
+    command: "page.configureComponent",
+    arguments: [this],
+  };
+}
+
+class Components extends vscode.TreeItem {
+  components?: Array<Component>;
+
+  constructor(
+    public readonly page: any,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super("Components", collapsibleState);
+    this.page = page;
+  }
+
+  iconPath = new vscode.ThemeIcon("extensions-view-icon");
+
+  async getChildren() {
+    if (!Array.isArray(this.components)) {
+      this.components = (
+        await state.api.get(`v1/widget-instances?pageId=${this.page.id}`)
+      ).data.widgetInstances;
+
+      const widgetInstancesInUse = _.get(
+        this.page,
+        "settings.widgetInstancesInUse"
+      );
+
+      if (this.components) {
+        const widgets = await api.getWidgets();
+
+        this.components = _.compact(
+          this.components.map((instance: any) => {
+            const widget = _.find(widgets, { id: instance.widgetId });
+
+            if (!widget) {
+              return;
+            }
+
+            if (
+              Array.isArray(widgetInstancesInUse) &&
+              widgetInstancesInUse.indexOf(instance.id) === -1
+            ) {
+            }
+
+            instance.widget = widget;
+
+            return new Component(instance, this.page);
+          })
+        );
+      }
+    }
+
+    return Promise.resolve(this.components);
   }
 }
 
@@ -367,7 +435,7 @@ export class FileExplorer {
           try {
             if (data.pageId) {
               if (data.ext === "js" || data.ext === "scss") {
-                if (data.ext === 'js') {
+                if (data.ext === "js") {
                   await state.api.post(
                     `v1/apps/${data.appId}/pages/${data.pageId}/settings`,
                     {
@@ -382,7 +450,6 @@ export class FileExplorer {
                     }
                   );
                 }
-
               } else if (data.ext === "html") {
                 await state.api
                   .put(
@@ -396,13 +463,13 @@ export class FileExplorer {
                   });
               }
             } else {
-              if (data.ext === 'js') {
+              if (data.ext === "js") {
                 await state.api.post(`v1/apps/${data.appId}/settings`, {
                   customJS: content,
                 });
 
                 app.settings.customJS = content;
-              } else if (data.ext === 'scss') {
+              } else if (data.ext === "scss") {
                 await state.api.post(`v1/apps/${data.appId}/settings`, {
                   customSCSS: content,
                 });
@@ -435,11 +502,30 @@ export class FileExplorer {
         title,
         vscode.ViewColumn.Two,
         {
-          enableScripts: true
+          enableScripts: true,
         }
       );
 
       panel.webview.html = getWebviewContent(title, url);
+    });
+
+    vscode.commands.registerCommand("page.configureComponent", function (instance: Component) {
+      const url = api.interfaceUrl(instance.component.id);
+
+      debugger;
+
+      const title = instance.component.widget.id;
+
+      const panel = vscode.window.createWebviewPanel(
+        instance.component.id.toString(),
+        title,
+        vscode.ViewColumn.Two,
+        {
+          enableScripts: true,
+        }
+      );
+
+      panel.webview.html = getInteraceWebViewContent(title, url);
     });
 
     vscode.commands.registerCommand("apps.openFile", async (file: File) => {
@@ -449,7 +535,7 @@ export class FileExplorer {
             os.tmpdir(),
             "Fliplet",
             state.organization.name,
-            `${file.app.name.substr(0, 32)}-${file.app.id}`,
+            `${file.app.name.substr(0, 32)}-${file.app.id}`
           );
 
           if (!fs.existsSync(basePath)) {
@@ -497,11 +583,18 @@ export class FileExplorer {
           });
 
           // Fetch rich content
-          if (file.ext === 'html') {
-            const interactVersion = parseInt(_.get(file.app, 'settings.interactVersion') || 2, 10);
+          if (file.ext === "html") {
+            const interactVersion = parseInt(
+              _.get(file.app, "settings.interactVersion") || 2,
+              10
+            );
 
             if (interactVersion > 2) {
-              const page = (await state.api.get(`v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`)).data.page;
+              const page = (
+                await state.api.get(
+                  `v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`
+                )
+              ).data.page;
 
               if (page && page.richLayout) {
                 file.content = page.richLayout;
@@ -539,9 +632,23 @@ export class FileExplorer {
   }
 }
 
-vscode.commands.registerCommand("file.edit", function () {});
-
 function getWebviewContent(name: string, url: string) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${name}</title>
+    <style>* {border:0;margin:0;padding:0;}</style>
+</head>
+<body>
+  <iframe style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;" src="${url}" width="100%" height="100%"></iframe>
+</body>
+</html>`;
+}
+
+
+function getInteraceWebViewContent(name: string, url: string) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

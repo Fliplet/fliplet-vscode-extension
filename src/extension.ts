@@ -2,9 +2,9 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 const axios = require("axios").default;
 const _ = require("lodash");
@@ -55,7 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
   tree = new FileExplorer(context);
 
   try {
-    fs.mkdirSync(path.join(os.tmpdir(), 'fliplet'));
+    fs.mkdirSync(path.join(os.tmpdir(), "fliplet"));
   } catch (err) {
     vscode.window.showErrorMessage(err);
   }
@@ -105,14 +105,17 @@ export async function activate(context: vscode.ExtensionContext) {
       api.create();
     }
 
-    _.forIn((await state.api.get('v1/widgets/assets')).data.assets, (value: any, name: string) => {
-      if (value.reference) {
-        value.name = name;
-        state.dependencies.push(value);
+    _.forIn(
+      (await state.api.get("v1/widgets/assets")).data.assets,
+      (value: any, name: string) => {
+        if (value.reference) {
+          value.name = name;
+          state.dependencies.push(value);
+        }
       }
-    });
+    );
 
-    state.dependencies = _.sortBy(state.dependencies, 'name');
+    state.dependencies = _.sortBy(state.dependencies, "name");
 
     dependenciesTree = new DependencyExplorer(context);
 
@@ -127,23 +130,25 @@ vscode.commands.registerCommand("apps.refresh", function () {
 vscode.commands.registerCommand("apps.settings", async function () {
   const quickPick = vscode.window.createQuickPick();
 
-  const items = [
-    {
-      label: "Log out from your account",
-      detail: `You are currently logged in as ${state.user.email}`,
-    },
-  ];
+  const items = [];
 
-  if (state.user.userRoleId === 1) {
-    items.push({
-      label: "Impersonate a different user",
-      detail: `Impersonate another Fliplet Studio user`,
-    });
-  } else if (currentContext.workspaceState.get('isImpersonating')) {
+  if (currentContext.workspaceState.get("isImpersonating")) {
     items.push({
       label: "Unimpersonate from this user",
       detail: `Logs out from the current impersonating session`,
     });
+  } else {
+    items.push({
+      label: "Log out from your account",
+      detail: `You are currently logged in as ${state.user.email}`,
+    });
+
+    if (state.user.userRoleId === 1) {
+      items.push({
+        label: "Impersonate a different user",
+        detail: `Impersonate another Fliplet Studio user`,
+      });
+    }
   }
 
   quickPick.items = items;
@@ -153,8 +158,8 @@ vscode.commands.registerCommand("apps.settings", async function () {
 
     if (label.indexOf("Log out") === 0) {
       logout();
-    } else if (label.indexOf('Impersonate') === 0) {
-      const users = (await state.api.get('v1/admin/users')).data.users;
+    } else if (label.indexOf("Impersonate") === 0) {
+      const users = (await state.api.get("v1/admin/users")).data.users;
 
       const usersPick = vscode.window.createQuickPick();
 
@@ -164,8 +169,11 @@ vscode.commands.registerCommand("apps.settings", async function () {
       usersPick.items = users.map((user: any) => {
         return {
           description: user.id.toString(),
-          label: `$(accounts-view-bar-icon) ${_.compact([user.firstName, user.lastName]).join(' ')}`,
-          detail: user.email
+          label: `$(accounts-view-bar-icon) ${_.compact([
+            user.firstName,
+            user.lastName,
+          ]).join(" ")}`,
+          detail: user.email,
         };
       });
 
@@ -173,7 +181,9 @@ vscode.commands.registerCommand("apps.settings", async function () {
         const userId = description;
         usersPick.hide();
 
-        const data = (await state.api.post(`/v1/admin/users/${userId}/impersonate`)).data;
+        const data = (
+          await state.api.post(`/v1/admin/users/${userId}/impersonate`)
+        ).data;
         const authToken = data.session.auth_token;
 
         if (!keytar) {
@@ -186,10 +196,14 @@ vscode.commands.registerCommand("apps.settings", async function () {
         );
 
         if (currentAuthToken) {
-          await keytar.setPassword(extensionId, "previousAuthToken", currentAuthToken);
+          await keytar.setPassword(
+            extensionId,
+            "previousAuthToken",
+            currentAuthToken
+          );
         }
 
-        currentContext.workspaceState.update('isImpersonating', true);
+        currentContext.workspaceState.update("isImpersonating", true);
 
         state.apps = [];
         tree.refresh();
@@ -198,7 +212,7 @@ vscode.commands.registerCommand("apps.settings", async function () {
       });
 
       usersPick.show();
-    } else if (label.indexOf('Unimpersonate') === 0) {
+    } else if (label.indexOf("Unimpersonate") === 0) {
       await state.api.post("v1/auth/logout");
 
       if (keytar) {
@@ -208,7 +222,7 @@ vscode.commands.registerCommand("apps.settings", async function () {
         );
 
         if (previousAuthToken) {
-          await keytar.deletePassword(extensionId, 'previousAuthToken');
+          await keytar.deletePassword(extensionId, "previousAuthToken");
           verify(previousAuthToken);
         } else {
           vscode.commands.executeCommand("setContext", "loggedIn", false);
@@ -227,6 +241,7 @@ async function logout() {
     keytar.deletePassword(extensionId, "authToken");
   }
 
+  currentContext.workspaceState.update("isImpersonating", false);
   vscode.commands.executeCommand("setContext", "loggedIn", false);
 
   if (statusBarItem) {
@@ -238,6 +253,8 @@ async function logout() {
   );
 
   state.user = {};
+
+  api.restoreBaseUrl();
 
   vscode.workspace.textDocuments.forEach((document) => {
     if (document.fileName.indexOf(state.organization.name) !== -1) {
@@ -255,7 +272,7 @@ async function fetchApps() {
     app.name = app.name.trim();
   });
 
-  state.apps = _.sortBy(apps, 'name');
+  state.apps = _.sortBy(apps, "name");
   tree.refresh();
 }
 
@@ -271,40 +288,50 @@ async function verify(authToken: string) {
       title: "Fliplet",
     },
     async (progress) => {
-    try {
-      progress.report({ message: 'Authenticating...', increment: 0 });
+      try {
+        progress.report({ message: "Authenticating...", increment: 0 });
 
-      state.user = (await state.api.get("v1/user")).data.user;
+        const response = (await state.api.get("v1/user")).data;
+        state.user = response.user;
 
-      progress.report({ message: 'Checking account and organization plan...', increment: 20 });
+        if (response.host && response.host !== api.baseURL()) {
+          api.create(authToken, response.host);
+        }
 
-      state.organization = _.first(
-        (await state.api.get("v1/organizations")).data.organizations
-      );
+        progress.report({
+          message: "Checking account and organization plan...",
+          increment: 20,
+        });
 
-      progress.report({ message: 'Retrieving apps...', increment: 80 });
-
-      if (keytar) {
-        await keytar.setPassword(extensionId, "authToken", authToken);
-      }
-
-      if (!statusBarItem) {
-        statusBarItem = vscode.window.createStatusBarItem(
-          vscode.StatusBarAlignment.Left,
-          1000
+        state.organization = _.first(
+          (await state.api.get("v1/organizations")).data.organizations
         );
+
+        progress.report({ message: "Retrieving apps...", increment: 80 });
+
+        if (keytar) {
+          await keytar.setPassword(extensionId, "authToken", authToken);
+        }
+
+        if (!statusBarItem) {
+          statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Left,
+            1000
+          );
+        }
+
+        statusBarItem.text = `${state.user.fullName} (${state.organization.name})`;
+        //statusBarItem.command = 'extension.sayHello';
+        statusBarItem.show();
+
+        await fetchApps();
+      } catch (err) {
+        vscode.commands.executeCommand("setContext", "loggedIn", false);
+        currentContext.workspaceState.update("isImpersonating", false);
+        console.error(err);
       }
-
-      statusBarItem.text = `${state.user.fullName} (${state.organization.name})`;
-      //statusBarItem.command = 'extension.sayHello';
-      statusBarItem.show();
-
-      await fetchApps();
-    } catch (err) {
-      vscode.commands.executeCommand("setContext", "loggedIn", false);
-      console.error(err);
     }
-  });
+  );
 }
 
 // this method is called when your extension is deactivated
