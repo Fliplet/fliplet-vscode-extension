@@ -194,7 +194,7 @@ class Page extends vscode.TreeItem {
   }
 
   contextValue = "screen";
-  iconPath = vscode.ThemeIcon.Folder;
+  iconPath = new vscode.ThemeIcon("notebook-render-output");
 
   getChildren() {
     return Promise.resolve([
@@ -304,7 +304,7 @@ class File extends vscode.TreeItem {
     arguments: [this],
   };
 
-  iconPath = vscode.ThemeIcon.File;
+  iconPath = new vscode.ThemeIcon("notebook-open-as-text");
 
   async getChildren() {
     return Promise.resolve([]);
@@ -495,6 +495,19 @@ export class FileExplorer {
             appId: file.app.id,
             pageId: file.page ? file.page.id : undefined,
           });
+
+          // Fetch rich content
+          if (file.ext === 'html') {
+            const interactVersion = parseInt(_.get(file.app, 'settings.interactVersion') || 2, 10);
+
+            if (interactVersion > 2) {
+              const page = (await state.api.get(`v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`)).data.page;
+
+              if (page && page.richLayout) {
+                file.content = page.richLayout;
+              }
+            }
+          }
 
           fs.writeFileSync(file.uri, file.content || "");
         } catch (err) {

@@ -251,7 +251,11 @@ vscode.commands.registerCommand("apps.logout", logout);
 async function fetchApps() {
   const apps = (await state.api.get("v1/apps")).data.apps;
 
-  state.apps = apps;
+  apps.forEach((app: any) => {
+    app.name = app.name.trim();
+  });
+
+  state.apps = _.sortBy(apps, 'name');
   tree.refresh();
 }
 
