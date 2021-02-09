@@ -215,6 +215,8 @@ vscode.commands.registerCommand("apps.settings", async function () {
     } else if (label.indexOf("Unimpersonate") === 0) {
       await state.api.post("v1/auth/logout");
 
+      currentContext.workspaceState.update("isImpersonating", false);
+
       if (keytar) {
         const previousAuthToken: string | any = await keytar.getPassword(
           extensionId,
