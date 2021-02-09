@@ -3,7 +3,7 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"engines": {
 		"vscode": "^1.53.0"
 	},
@@ -44,6 +44,11 @@
 				"command": "page.preview",
 				"title": "Preview page",
 				"icon": "$(ports-open-browser-icon)"
+			},
+			{
+				"command": "page.configureComponent",
+				"title": "Configure component",
+				"icon": "$(output-view-icon)"
 			}
 		],
 		"menus": {
@@ -63,6 +68,11 @@
 				{
 					"command": "page.preview",
 					"when": "view == apps && viewItem == screen",
+					"group": "inline"
+				},
+				{
+					"command": "page.configureComponent",
+					"when": "view == apps && viewItem == component",
 					"group": "inline"
 				}
 			]

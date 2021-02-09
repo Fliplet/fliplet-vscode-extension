@@ -205,6 +205,7 @@ class Page extends vscode.TreeItem {
         page: this.pageData,
         app: this.app,
         ext: "html",
+        contextValue: "screen"
       }),
       new File({
         label: "Screen JavaScript",
@@ -222,21 +223,41 @@ class Page extends vscode.TreeItem {
         app: this.app,
         ext: "scss",
       }),
-      new Components(this.page, 1),
+      new Components(this.page, this.app, 1),
     ]);
   }
 }
 
 class Component extends vscode.TreeItem {
-  constructor(public readonly component: any, public readonly page: any) {
+  content?: string;
+  uri?: string;
+  ext = "json";
+  type: vscode.FileType;
+
+  constructor(
+    public readonly component: any,
+    public readonly page: any,
+    public readonly app: any
+    ) {
     super(component.widget ? component.widget.name : component.package, 0);
+
+    this.type = vscode.FileType.File;
+
+    const label = _.get(component.settings, 'label')
+     || _.get(component.settings, 'title')
+     || _.get(component.settings, 'name');
+
+     if (label && typeof label === 'string') {
+       this.description = label;
+     }
   }
 
   iconPath = new vscode.ThemeIcon("notebook-mimetype");
+  contextValue = "component";
 
   command = {
-    title: "Configure component",
-    command: "page.configureComponent",
+    title: "Edit component settings",
+    command: "apps.openFile",
     arguments: [this],
   };
 }
@@ -246,10 +267,10 @@ class Components extends vscode.TreeItem {
 
   constructor(
     public readonly page: any,
+    public readonly app: any,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
     super("Components", collapsibleState);
-    this.page = page;
   }
 
   iconPath = new vscode.ThemeIcon("extensions-view-icon");
@@ -284,7 +305,7 @@ class Components extends vscode.TreeItem {
 
             instance.widget = widget;
 
-            return new Component(instance, this.page);
+            return new Component(instance, this.page, this.app);
           })
         );
       }
@@ -364,6 +385,7 @@ class File extends vscode.TreeItem {
     this.page = data.page;
     this.ext = data.ext;
     this.tooltip = "";
+    this.contextValue = data.contextValue;
   }
 
   command = {
@@ -433,7 +455,10 @@ export class FileExplorer {
           const content = event.document.getText();
 
           try {
-            if (data.pageId) {
+            if (data.widgetInstanceId) {
+              await state.api.put(
+                `v1/widget-instances/${data.widgetInstanceId}`, JSON.parse(content));
+            } else if (data.pageId) {
               if (data.ext === "js" || data.ext === "scss") {
                 if (data.ext === "js") {
                   await state.api.post(
@@ -492,13 +517,17 @@ export class FileExplorer {
       context.workspaceState.update(fileHash(doc.fileName), undefined);
     });
 
-    vscode.commands.registerCommand("page.preview", async (page: Page) => {
-      const url = api.previewUrl(page.app.id, page.page.id);
+    vscode.commands.registerCommand("component.configure", async (item: Component) => {
 
-      const title = `${page.pageData.title} (${page.app.name})`;
+    });
+
+    vscode.commands.registerCommand("page.preview", async (item: Page | File) => {
+      const url = api.previewUrl(item.app.id, item.page.id);
+      const pageData = item.page;
+      const title = `${pageData.title} (${item.app.name})`;
 
       const panel = vscode.window.createWebviewPanel(
-        page.pageData.id.toString(),
+        pageData.id.toString(),
         title,
         vscode.ViewColumn.Two,
         {
@@ -525,7 +554,7 @@ export class FileExplorer {
       panel.webview.html = getInteraceWebViewContent(title, url);
     });
 
-    vscode.commands.registerCommand("apps.openFile", async (file: File) => {
+    vscode.commands.registerCommand("apps.openFile", async (file: File | Component) => {
       if (!file.uri) {
         try {
           let basePath = path.join(
@@ -563,7 +592,9 @@ export class FileExplorer {
 
           let fileName;
 
-          if (file.page) {
+          if (file instanceof Component) {
+            fileName = `${file.component.widget.name.substr(0, 32)}-${file.component.id}`;
+          } else if (file.page) {
             fileName = `${file.page.title.substr(0, 32)}`;
           } else {
             fileName = `${file.app.name.substr(0, 32)}`;
@@ -577,6 +608,7 @@ export class FileExplorer {
             ext: file.ext,
             appId: file.app.id,
             pageId: file.page ? file.page.id : undefined,
+            widgetInstanceId: (file instanceof Component) ? file.component.id : undefined
           });
 
           // Fetch rich content
@@ -597,6 +629,10 @@ export class FileExplorer {
                 file.content = page.richLayout;
               }
             }
+          }
+
+          if (file instanceof Component) {
+            file.content =  JSON.stringify(_.get(file.component, 'settings'), null, 2);
           }
 
           fs.writeFileSync(file.uri, file.content || "");

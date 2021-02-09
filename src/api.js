@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 const state = require('./state');
-
 const axios = require("axios").default;
+const vscode = require('vscode');
+
+const version = vscode.extensions.getExtension('fliplet.vscode').packageJSON.version;
 
 const primaryBaseURL = "https://api.fliplet.com/";
 let currentToken;
@@ -36,7 +38,7 @@ module.exports.create = function CreateAPI(authToken, url) {
 
   state.api = axios.create({
     baseURL,
-    headers: { "Auth-token": authToken || '', 'User-Agent': 'VSCode/1.0' },
+    headers: { "Auth-token": authToken || '', 'User-Agent': `VSCode/${version}` },
   });
 };
 

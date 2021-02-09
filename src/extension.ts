@@ -38,7 +38,7 @@ function getNodeModule<T>(moduleName: string): T | undefined {
 
 const keytar = getNodeModule<typeof keytarType>("keytar");
 import { FileExplorer } from "./apps-provider";
-import { DependencyExplorer, DependencyProvider } from "./dependencies";
+import { DependencyExplorer } from "./dependencies";
 
 const extensionId = "fliplet.vscode";
 
