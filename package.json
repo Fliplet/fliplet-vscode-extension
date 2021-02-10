@@ -41,6 +41,11 @@
 				"icon": "$(remote-explorer-view-icon)"
 			},
 			{
+				"command": "apps.filter",
+				"title": "Toggle filter type (type to search)",
+				"icon": "$(filter)"
+			},
+			{
 				"command": "apps.settings",
 				"title": "User settings and log out",
 				"icon": "$(accounts-view-bar-icon)"
@@ -70,6 +75,11 @@
 			"view/title": [
 				{
 					"command": "apps.refresh",
+					"when": "view == apps",
+					"group": "navigation"
+				},
+				{
+					"command": "apps.filter",
 					"when": "view == apps",
 					"group": "navigation"
 				},

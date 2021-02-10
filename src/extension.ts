@@ -127,6 +127,10 @@ vscode.commands.registerCommand("apps.refresh", function () {
   fetchApps();
 });
 
+vscode.commands.registerCommand("apps.filter", function () {
+  vscode.commands.executeCommand('list.toggleFilterOnType');
+});
+
 vscode.commands.registerCommand("apps.openDeveloperTools", async function () {
   vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
 });
