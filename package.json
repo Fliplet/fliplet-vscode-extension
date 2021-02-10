@@ -3,7 +3,7 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.1.1",
+	"version": "1.1.2",
 	"engines": {
 		"vscode": "^1.51.0"
 	},
@@ -53,7 +53,7 @@
 			{
 				"command": "page.configureComponent",
 				"title": "Configure component",
-				"icon": "$(extensions-manage)"
+				"icon": "$(wrench)"
 			},
 			{
 				"command": "page.deleteComponent",

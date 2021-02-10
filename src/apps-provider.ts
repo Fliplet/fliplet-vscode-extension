@@ -749,7 +749,23 @@ export class FileExplorer {
           }
         );
 
-        panel.webview.html = getInteraceWebViewContent(title, url);
+        vscode.commands.executeCommand("setContext", "hasPreviews", true);
+
+        // Handle messages from the webview
+        panel.webview.onDidReceiveMessage(
+          (data) => {
+            switch (data.event) {
+              case "widget-save-complete":
+                panel.dispose();
+                treeDataProvider.refresh();
+                return;
+            }
+          },
+          undefined,
+          context.subscriptions
+        );
+
+        panel.webview.html = getInterfaceWebViewContent(title, url);
       }
     );
 
@@ -1047,7 +1063,7 @@ window.addEventListener('message', function (event) {
       vscode.postMessage(event.data);
     }
   }
-})
+});
     </script>
 </head>
 <body>
@@ -1056,13 +1072,14 @@ window.addEventListener('message', function (event) {
 </html>`;
 }
 
-function getInteraceWebViewContent(name: string, url: string) {
+function getInterfaceWebViewContent(name: string, url: string) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${name}</title>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" crossorigin="anonymous"></script>
     <style>
 * {border:0;margin:0;padding:0;}
 body {
@@ -1088,13 +1105,37 @@ footer {
   background: var(--vscode-editor-background);
   color: var(--vscode-editor-foreground);
 }
+
+a {
+  text-decoration: none;
+  text-transform: uppercase;
+}
     </style>
 </head>
 <body>
-  <iframe src="${url}" width="100%" height="100%"></iframe>
+  <iframe class="interface" src="${url}" width="100%" height="100%"></iframe>
   <footer>
     <a data-save href="#">Save &amp; Close</a>
   </footer>
+  <script>
+$('[data-save]').click(function (event) {
+  event.preventDefault();
+
+  var $iframe = $('iframe.interface');
+  $iframe[0].contentWindow.postMessage('save-widget', '*');
+});
+
+const vscode = acquireVsCodeApi();
+
+window.addEventListener('message', function (event) {
+  if (event.data) {
+    if (event.data.event === 'widget-save-complete') {
+      vscode.postMessage(event.data);
+    }
+  }
+});
+
+  </script>
 </body>
 </html>`;
 }
