@@ -3,9 +3,9 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.0.7",
+	"version": "1.0.9",
 	"engines": {
-		"vscode": "^1.53.0"
+		"vscode": "^1.51.0"
 	},
 	"categories": [
 		"Other"
@@ -48,7 +48,12 @@
 			{
 				"command": "page.configureComponent",
 				"title": "Configure component",
-				"icon": "$(output-view-icon)"
+				"icon": "$(extensions-manage)"
+			},
+			{
+				"command": "page.deleteComponent",
+				"title": "Delete component",
+				"icon": "$(notebook-delete-cell)"
 			}
 		],
 		"menus": {
@@ -72,6 +77,11 @@
 				},
 				{
 					"command": "page.configureComponent",
+					"when": "view == apps && viewItem == component",
+					"group": "inline"
+				},
+				{
+					"command": "page.deleteComponent",
 					"when": "view == apps && viewItem == component",
 					"group": "inline"
 				}
@@ -130,7 +140,7 @@
 		"test": "node ./out/test/runTest.js"
 	},
 	"devDependencies": {
-		"@types/vscode": "^1.53.0",
+		"@types/vscode": "^1.51.0",
 		"@types/glob": "^7.1.3",
 		"@types/mocha": "^8.0.4",
 		"@types/node": "^12.11.7",

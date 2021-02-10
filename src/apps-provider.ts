@@ -205,7 +205,7 @@ class Page extends vscode.TreeItem {
         page: this.pageData,
         app: this.app,
         ext: "html",
-        contextValue: "screen"
+        contextValue: "screen",
       }),
       new File({
         label: "Screen JavaScript",
@@ -238,18 +238,19 @@ class Component extends vscode.TreeItem {
     public readonly component: any,
     public readonly page: any,
     public readonly app: any
-    ) {
+  ) {
     super(component.widget ? component.widget.name : component.package, 0);
 
     this.type = vscode.FileType.File;
 
-    const label = _.get(component.settings, 'label')
-     || _.get(component.settings, 'title')
-     || _.get(component.settings, 'name');
+    const label =
+      _.get(component.settings, "label") ||
+      _.get(component.settings, "title") ||
+      _.get(component.settings, "name");
 
-     if (label && typeof label === 'string') {
-       this.description = label;
-     }
+    if (label && typeof label === "string") {
+      this.description = label;
+    }
   }
 
   iconPath = new vscode.ThemeIcon("notebook-mimetype");
@@ -266,7 +267,7 @@ class Components extends vscode.TreeItem {
   components?: Array<Component>;
 
   constructor(
-    public readonly page: any,
+    public readonly page: any | undefined,
     public readonly app: any,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
@@ -277,14 +278,22 @@ class Components extends vscode.TreeItem {
 
   async getChildren() {
     if (!Array.isArray(this.components)) {
-      this.components = (
-        await state.api.get(`v1/widget-instances?pageId=${this.page.id}`)
-      ).data.widgetInstances;
+      let widgetInstancesInUse: undefined | Array<number>;
 
-      const widgetInstancesInUse = _.get(
-        this.page,
-        "settings.widgetInstancesInUse"
-      );
+      if (this.page) {
+        this.components = (
+          await state.api.get(`v1/widget-instances?pageId=${this.page.id}`)
+        ).data.widgetInstances;
+
+        widgetInstancesInUse = _.get(
+          this.page,
+          "settings.widgetInstancesInUse"
+        );
+      } else {
+        this.components = (
+          await state.api.get(`v1/widget-instances?appId=${this.app.id}`)
+        ).data.widgetInstances;
+      }
 
       if (this.components) {
         const widgets = await api.getWidgets();
@@ -301,6 +310,7 @@ class Components extends vscode.TreeItem {
               Array.isArray(widgetInstancesInUse) &&
               widgetInstancesInUse.indexOf(instance.id) === -1
             ) {
+              return; // skip instances that aren't on the page
             }
 
             instance.widget = widget;
@@ -316,7 +326,7 @@ class Components extends vscode.TreeItem {
 }
 
 class App extends vscode.TreeItem {
-  pages?: Array<Page | File>;
+  pages?: Array<Page | File | Components>;
   appData: any;
 
   constructor(
@@ -362,6 +372,8 @@ class App extends vscode.TreeItem {
             ext: "js",
           })
         );
+
+        this.pages.unshift(new Components(undefined, this.app, 1));
       }
     }
 
@@ -457,7 +469,9 @@ export class FileExplorer {
           try {
             if (data.widgetInstanceId) {
               await state.api.put(
-                `v1/widget-instances/${data.widgetInstanceId}`, JSON.parse(content));
+                `v1/widget-instances/${data.widgetInstanceId}`,
+                JSON.parse(content)
+              );
             } else if (data.pageId) {
               if (data.ext === "js" || data.ext === "scss") {
                 if (data.ext === "js") {
@@ -517,68 +531,74 @@ export class FileExplorer {
       context.workspaceState.update(fileHash(doc.fileName), undefined);
     });
 
-    vscode.commands.registerCommand("component.configure", async (item: Component) => {
+    vscode.commands.registerCommand(
+      "component.configure",
+      async (item: Component) => {}
+    );
 
-    });
+    vscode.commands.registerCommand(
+      "page.preview",
+      async (item: Page | File) => {
+        const url = api.previewUrl(item.app.id, item.page.id);
+        const pageData = item.page;
+        const title = `${pageData.title} (${item.app.name})`;
 
-    vscode.commands.registerCommand("page.preview", async (item: Page | File) => {
-      const url = api.previewUrl(item.app.id, item.page.id);
-      const pageData = item.page;
-      const title = `${pageData.title} (${item.app.name})`;
-
-      const panel = vscode.window.createWebviewPanel(
-        pageData.id.toString(),
-        title,
-        vscode.ViewColumn.Two,
-        {
-          enableScripts: true,
-        }
-      );
-
-      panel.webview.html = getWebviewContent(title, url);
-    });
-
-    vscode.commands.registerCommand("page.configureComponent", function (instance: Component) {
-      const url = api.interfaceUrl(instance.component.id);
-      const title = instance.component.widget.name;
-
-      const panel = vscode.window.createWebviewPanel(
-        instance.component.id.toString(),
-        title,
-        vscode.ViewColumn.Two,
-        {
-          enableScripts: true,
-        }
-      );
-
-      panel.webview.html = getInteraceWebViewContent(title, url);
-    });
-
-    vscode.commands.registerCommand("apps.openFile", async (file: File | Component) => {
-      if (!file.uri) {
-        try {
-          let basePath = path.join(
-            os.tmpdir(),
-            "Fliplet",
-            state.organization.name,
-            `${file.app.name.substr(0, 32)}-${file.app.id}`
-          );
-
-          if (!fs.existsSync(basePath)) {
-            try {
-              fs.mkdirSync(basePath, { recursive: true });
-            } catch (e) {
-              console.error(e);
-            }
+        const panel = vscode.window.createWebviewPanel(
+          pageData.id.toString(),
+          title,
+          vscode.ViewColumn.Two,
+          {
+            enableScripts: true,
           }
+        );
 
-          if (file.page) {
-            basePath = path.join(
+        panel.webview.html = getWebviewContent(title, url);
+      }
+    );
+
+    vscode.commands.registerCommand(
+      "page.configureComponent",
+      function (instance: Component) {
+        const url = api.interfaceUrl(instance.component.id);
+        const title = instance.component.widget.name;
+
+        const panel = vscode.window.createWebviewPanel(
+          instance.component.id.toString(),
+          title,
+          vscode.ViewColumn.Two,
+          {
+            enableScripts: true,
+          }
+        );
+
+        panel.webview.html = getInteraceWebViewContent(title, url);
+      }
+    );
+
+    vscode.commands.registerCommand(
+      "page.deleteComponent",
+      async function (instance: Component) {
+        vscode.window.showInformationMessage(`Do you want to delete this ${instance.label} component?`, 'Delete', 'Dismiss').then(async (label) => {
+          if (label === 'Delete') {
+            await state.api.delete(`v1/widget-instances/${instance.component.id}`);
+            treeDataProvider.refresh();
+
+            vscode.window.showInformationMessage(`The component has been deleted.`);
+          }
+        });
+      }
+    );
+
+    vscode.commands.registerCommand(
+      "apps.openFile",
+      async (file: File | Component) => {
+        if (!file.uri) {
+          try {
+            let basePath = path.join(
               os.tmpdir(),
               "Fliplet",
               state.organization.name,
-              `${file.app.name.substr(0, 32)}-${file.app.id}`,
-              `${file.page.id}`
+              `${file.app.name.substr(0, 32)}-${file.app.id}`
             );
 
             if (!fs.existsSync(basePath)) {
@@ -588,74 +608,99 @@ export class FileExplorer {
                 console.error(e);
               }
             }
-          }
 
-          let fileName;
+            if (file.page) {
+              basePath = path.join(
+                os.tmpdir(),
+                "Fliplet",
+                state.organization.name,
+                `${file.app.name.substr(0, 32)}-${file.app.id}`,
+                `${file.page.id}`
+              );
 
-          if (file instanceof Component) {
-            fileName = `${file.component.widget.name.substr(0, 32)}-${file.component.id}`;
-          } else if (file.page) {
-            fileName = `${file.page.title.substr(0, 32)}`;
-          } else {
-            fileName = `${file.app.name.substr(0, 32)}`;
-          }
-
-          fileName += `.${file.ext}`;
-
-          file.uri = path.join(basePath, fileName);
-
-          context.workspaceState.update(fileHash(file.uri), {
-            ext: file.ext,
-            appId: file.app.id,
-            pageId: file.page ? file.page.id : undefined,
-            widgetInstanceId: (file instanceof Component) ? file.component.id : undefined
-          });
-
-          // Fetch rich content
-          if (file.ext === "html") {
-            const interactVersion = parseInt(
-              _.get(file.app, "settings.interactVersion") || 2,
-              10
-            );
-
-            if (interactVersion > 2) {
-              const page = (
-                await state.api.get(
-                  `v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`
-                )
-              ).data.page;
-
-              if (page && page.richLayout) {
-                file.content = page.richLayout;
+              if (!fs.existsSync(basePath)) {
+                try {
+                  fs.mkdirSync(basePath, { recursive: true });
+                } catch (e) {
+                  console.error(e);
+                }
               }
             }
-          }
 
-          if (file instanceof Component) {
-            file.content =  JSON.stringify(_.get(file.component, 'settings'), null, 2);
-          }
+            let fileName;
 
-          fs.writeFileSync(file.uri, file.content || "");
-        } catch (err) {
-          console.error(err);
-          vscode.window.showErrorMessage(err);
+            if (file instanceof Component) {
+              fileName = `${file.component.widget.name.substr(0, 32)}-${
+                file.component.id
+              }`;
+            } else if (file.page) {
+              fileName = `${file.page.title.substr(0, 32)}`;
+            } else {
+              fileName = `${file.app.name.substr(0, 32)}`;
+            }
+
+            fileName += `.${file.ext}`;
+
+            file.uri = path.join(basePath, fileName);
+
+            context.workspaceState.update(fileHash(file.uri), {
+              ext: file.ext,
+              appId: file.app.id,
+              pageId: file.page ? file.page.id : undefined,
+              widgetInstanceId:
+                file instanceof Component ? file.component.id : undefined,
+            });
+
+            // Fetch rich content
+            if (file.ext === "html") {
+              const interactVersion = parseInt(
+                _.get(file.app, "settings.interactVersion") || 2,
+                10
+              );
+
+              if (interactVersion > 2) {
+                const page = (
+                  await state.api.get(
+                    `v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`
+                  )
+                ).data.page;
+
+                if (page && page.richLayout) {
+                  file.content = page.richLayout;
+                }
+              }
+            }
+
+            if (file instanceof Component) {
+              file.content = JSON.stringify(
+                _.get(file.component, "settings"),
+                null,
+                2
+              );
+            }
+
+            fs.writeFileSync(file.uri, file.content || "");
+          } catch (err) {
+            console.error(err);
+            vscode.window.showErrorMessage(err);
+          }
         }
+
+        if (!file.uri) {
+          return;
+        }
+
+        const doc = await vscode.workspace.openTextDocument(file.uri);
+        const editor = await vscode.window.showTextDocument(doc, {
+          preview: true,
+        });
+
+        vscode.languages.setTextDocumentLanguage(
+          editor.document,
+          file.type.toString()
+        );
       }
-
-      if (!file.uri) {
-        return;
-      }
-
-      const doc = await vscode.workspace.openTextDocument(file.uri);
-      const editor = await vscode.window.showTextDocument(doc, {
-        preview: true,
-      });
-
-      vscode.languages.setTextDocumentLanguage(
-        editor.document,
-        file.type.toString()
-      );
-    });
+    );
 
     this.treeDataProvider = treeDataProvider;
   }
@@ -679,7 +724,6 @@ function getWebviewContent(name: string, url: string) {
 </body>
 </html>`;
 }
-
 
 function getInteraceWebViewContent(name: string, url: string) {
   return `<!DOCTYPE html>
