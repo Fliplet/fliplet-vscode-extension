@@ -186,8 +186,8 @@ class Page extends vscode.TreeItem {
     app: any
   ) {
     super(page.title, collapsibleState);
-    this.tooltip = `${moment(page.updatedAt).fromNow()}`;
-    this.description = this.tooltip;
+    this.tooltip = `ID ${page.id}`;
+    this.description = moment(page.updatedAt).fromNow();
     this.app = app;
     this.id = `page-${page.id}`;
     this.pageData = page;
@@ -251,9 +251,13 @@ class Component extends vscode.TreeItem {
     if (label && typeof label === "string") {
       this.description = label;
     }
+
+    this.tooltip = `ID ${component.id} - ${moment(
+      component.updatedAt
+    ).fromNow()}`;
   }
 
-  iconPath = new vscode.ThemeIcon("notebook-mimetype");
+  iconPath = new vscode.ThemeIcon("symbol-misc");
   contextValue = "component";
 
   command = {
@@ -269,9 +273,10 @@ class Components extends vscode.TreeItem {
   constructor(
     public readonly page: any | undefined,
     public readonly app: any,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+    label?: string
   ) {
-    super("Components", collapsibleState);
+    super(label || "Components", collapsibleState);
   }
 
   iconPath = new vscode.ThemeIcon("extensions-view-icon");
@@ -325,8 +330,135 @@ class Components extends vscode.TreeItem {
   }
 }
 
+class DataSourceEntries extends vscode.TreeItem {
+  content?: string;
+  uri?: string;
+  page?: any;
+  ext = "json";
+  type: vscode.FileType;
+  entries?: Array<any>;
+
+  constructor(public readonly dataSource: any, public readonly app: any) {
+    super("Entries", 0);
+    this.type = vscode.FileType.File;
+  }
+
+  iconPath = new vscode.ThemeIcon("symbol-keyword");
+  contextValue = "dataSourceEntries";
+
+  command = {
+    title: "Edit entries",
+    command: "apps.openFile",
+    arguments: [this],
+  };
+}
+
+class DataSourceMetadata extends vscode.TreeItem {
+  content?: string;
+  uri?: string;
+  ext = "json";
+  page?: any;
+  type: vscode.FileType;
+
+  constructor(public readonly dataSource: any, public readonly app: any) {
+    super("Settings", 0);
+    this.type = vscode.FileType.File;
+  }
+
+  iconPath = new vscode.ThemeIcon("symbol-constant");
+  contextValue = "dataSourceMetadata";
+
+  command = {
+    title: "Edit settings",
+    command: "apps.openFile",
+    arguments: [this],
+  };
+}
+
+class DataSource extends vscode.TreeItem {
+  content?: string;
+  uri?: string;
+  ext = "json";
+  type: vscode.FileType;
+  children?: Array<DataSourceEntries | DataSourceMetadata>;
+
+  constructor(
+    public readonly dataSource: any,
+    public readonly app: any,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(dataSource.name, collapsibleState);
+
+    this.type = vscode.FileType.Directory;
+    this.description = moment(dataSource.updatedAt).fromNow();
+    this.tooltip = `ID ${dataSource.id} - ${
+      dataSource.columns ? dataSource.columns.length : 0
+    } columns`;
+  }
+
+  iconPath = new vscode.ThemeIcon("symbol-function");
+  contextValue = "dataSource";
+
+  async getChildren() {
+    if (!this.children) {
+      this.children = [
+        new DataSourceMetadata(this.dataSource, this.app),
+        new DataSourceEntries(this.dataSource, this.app),
+      ];
+    }
+
+    return Promise.resolve(this.children);
+  }
+}
+
+class DataSources extends vscode.TreeItem {
+  dataSources?: Array<DataSource>;
+
+  constructor(
+    public readonly app: any,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super("Data Sources", collapsibleState);
+  }
+
+  iconPath = new vscode.ThemeIcon("database");
+  contextValue = "dataSources";
+
+  async getChildren() {
+    if (!Array.isArray(this.dataSources)) {
+      this.dataSources = (
+        await state.api.get(
+          `v1/data-sources?roles=publisher,editor&appId=${this.app.id}`
+        )
+      ).data.dataSources;
+
+      const inUse = _.get(this.app, "dataSourcesInUse").concat(
+        _.get(this.app, "settings.customDataSourcesInUse", [])
+      );
+
+      if (this.dataSources) {
+        this.dataSources = _.compact(
+          this.dataSources.map((instance: any) => {
+            if (["conversation"].indexOf(instance.type) !== -1) {
+              return;
+            }
+
+            if (inUse && inUse.indexOf(instance.id) === -1) {
+              return;
+            }
+
+            return new DataSource(instance, this.app, 1);
+          })
+        );
+      }
+    }
+
+    return Promise.resolve(this.dataSources);
+  }
+}
+
 class App extends vscode.TreeItem {
-  pages?: Array<Page | File | Components>;
+  pages?: Array<Page | File | Components | DataSources>;
   appData: any;
 
   constructor(
@@ -334,7 +466,7 @@ class App extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
     super(app.name, collapsibleState);
-    this.tooltip = `Last updated ${moment(app.updatedAt).fromNow()}`;
+    this.tooltip = `ID ${app.id}`;
     this.description = moment(app.updatedAt).fromNow();
     this.appData = app;
     this.id = `app-${app.id}`;
@@ -373,7 +505,10 @@ class App extends vscode.TreeItem {
           })
         );
 
-        this.pages.unshift(new Components(undefined, this.app, 1));
+        this.pages.unshift(new DataSources(this.app, 1));
+        this.pages.unshift(
+          new Components(undefined, this.app, 1, "Add-ons & Components")
+        );
       }
     }
 
@@ -467,7 +602,35 @@ export class FileExplorer {
           const content = event.document.getText();
 
           try {
-            if (data.widgetInstanceId) {
+            if (data.dataSourceId) {
+              if (data.contextValue === "dataSourceEntries") {
+                const entries = (await state.api.post(
+                  `v1/data-sources/${data.dataSourceId}/commit`,
+                  {
+                    entries: JSON.parse(content),
+                    source: "vscode",
+                  }
+                )).data.entries;
+
+                updateDoc(JSON.stringify(
+                  entries.map((entry: any) => {
+                    return _.pick(entry, [
+                      "id",
+                      "data",
+                      "createdAt",
+                      "updatedAt",
+                    ]);
+                  }),
+                  null,
+                  2
+                ));
+              } else if (data.contextValue === "dataSourceMetadata") {
+                await state.api.put(
+                  `v1/data-sources/${data.dataSourceId}`,
+                  JSON.parse(content)
+                );
+              }
+            } else if (data.widgetInstanceId) {
               await state.api.put(
                 `v1/widget-instances/${data.widgetInstanceId}`,
                 JSON.parse(content)
@@ -519,9 +682,9 @@ export class FileExplorer {
             treeDataProvider.refresh();
 
             progress.report({ increment: 100 });
-          } catch (e) {
-            console.error(e);
-            vscode.window.showErrorMessage(e);
+          } catch (err) {
+            console.error(err);
+            vscode.window.showErrorMessage(_.get(err, 'response.data.message') || err.message);
           }
         }
       );
@@ -552,6 +715,21 @@ export class FileExplorer {
           }
         );
 
+        vscode.commands.executeCommand("setContext", "hasPreviews", true);
+
+        // Handle messages from the webview
+        panel.webview.onDidReceiveMessage(
+          (data) => {
+            switch (data.event) {
+              case "user-script-error":
+                vscode.window.showErrorMessage(data.error);
+                return;
+            }
+          },
+          undefined,
+          context.subscriptions
+        );
+
         panel.webview.html = getWebviewContent(title, url);
       }
     );
@@ -578,126 +756,262 @@ export class FileExplorer {
     vscode.commands.registerCommand(
       "page.deleteComponent",
       async function (instance: Component) {
-        vscode.window.showInformationMessage(`Do you want to delete this ${instance.label} component?`, 'Delete', 'Dismiss').then(async (label) => {
-          if (label === 'Delete') {
-            await state.api.delete(`v1/widget-instances/${instance.component.id}`);
-            treeDataProvider.refresh();
+        vscode.window
+          .showInformationMessage(
+            `Do you want to delete this ${instance.label} component?`,
+            "Delete",
+            "Dismiss"
+          )
+          .then(async (label) => {
+            if (label === "Delete") {
+              await state.api.delete(
+                `v1/widget-instances/${instance.component.id}`
+              );
+              treeDataProvider.refresh();
 
-            vscode.window.showInformationMessage(`The component has been deleted.`);
-          }
-        });
+              vscode.window.showInformationMessage(
+                `The component has been deleted.`
+              );
+            }
+          });
+      }
+    );
+
+    vscode.commands.registerCommand(
+      "dataSource.create",
+      async function (instance: DataSources) {
+        vscode.window
+          .showInputBox({
+            prompt: "Enter the name of your new Data Source",
+            placeHolder: "Data Source name",
+          })
+          .then(async (name) => {
+            if (!name) {
+              vscode.window.showErrorMessage("A name is required");
+
+              return;
+            }
+
+            try {
+              const dataSource = (
+                await state.api.post(`v1/data-sources`, {
+                  name,
+                  appId: instance.app.id,
+                  accessRules: [
+                    {
+                      type: ["select", "insert", "update", "delete"],
+                      allow: "all",
+                      appId: [instance.app.id],
+                      enabled: true,
+                    },
+                  ],
+                })
+              ).data.dataSource;
+
+              const customDataSourcesInUse = _.get(
+                instance.app,
+                "settings.customDataSourcesInUse",
+                []
+              );
+              customDataSourcesInUse.push(dataSource.id);
+
+              await state.api.post(`v1/apps/${instance.app.id}/settings`, {
+                customDataSourcesInUse,
+              });
+
+              instance.app.dataSourcesInUse = instance.app.dataSourcesInUse.concat(
+                customDataSourcesInUse
+              );
+
+              treeDataProvider.refresh();
+            } catch (err) {
+              vscode.window.showErrorMessage(err.message);
+            }
+          });
       }
     );
 
     vscode.commands.registerCommand(
       "apps.openFile",
-      async (file: File | Component) => {
-        if (!file.uri) {
-          try {
-            let basePath = path.join(
-              os.tmpdir(),
-              "Fliplet",
-              state.organization.name,
-              `${file.app.name.substr(0, 32)}-${file.app.id}`
-            );
-
-            if (!fs.existsSync(basePath)) {
+      async (
+        file: File | Component | DataSourceEntries | DataSourceMetadata
+      ) => {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Window,
+            cancellable: false,
+            title: "Retrieving data",
+          },
+          async (progress) => {
+            if (!file.uri) {
               try {
-                fs.mkdirSync(basePath, { recursive: true });
-              } catch (e) {
-                console.error(e);
-              }
-            }
+                let basePath = path.join(
+                  os.tmpdir(),
+                  "Fliplet",
+                  state.organization.name,
+                  `${file.app.name.substr(0, 32)}-${file.app.id}`
+                );
 
-            if (file.page) {
-              basePath = path.join(
-                os.tmpdir(),
-                "Fliplet",
-                state.organization.name,
-                `${file.app.name.substr(0, 32)}-${file.app.id}`,
-                `${file.page.id}`
-              );
-
-              if (!fs.existsSync(basePath)) {
-                try {
-                  fs.mkdirSync(basePath, { recursive: true });
-                } catch (e) {
-                  console.error(e);
+                if (!fs.existsSync(basePath)) {
+                  try {
+                    fs.mkdirSync(basePath, { recursive: true });
+                  } catch (e) {
+                    console.error(e);
+                  }
                 }
+
+                if (file.page) {
+                  basePath = path.join(
+                    os.tmpdir(),
+                    "Fliplet",
+                    state.organization.name,
+                    `${file.app.name.substr(0, 32)}-${file.app.id}`,
+                    `${file.page.id}`
+                  );
+
+                  if (!fs.existsSync(basePath)) {
+                    try {
+                      fs.mkdirSync(basePath, { recursive: true });
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }
+                }
+
+                let fileName;
+
+                if (file instanceof DataSourceMetadata) {
+                  fileName = `${file.dataSource.name.substr(0, 32)}-${
+                    file.dataSource.id
+                  }-settings`;
+                } else if (file instanceof DataSourceEntries) {
+                  fileName = `${file.dataSource.name.substr(0, 32)}-${
+                    file.dataSource.id
+                  }-entries`;
+                } else if (file instanceof Component) {
+                  fileName = `${file.component.widget.name.substr(0, 32)}-${
+                    file.component.id
+                  }`;
+                } else if (file.page) {
+                  fileName = `${file.page.title.substr(0, 32)}`;
+                } else {
+                  fileName = `${file.app.name.substr(0, 32)}`;
+                }
+
+                fileName += `.${file.ext}`;
+
+                file.uri = path.join(basePath, fileName);
+
+                context.workspaceState.update(fileHash(file.uri), {
+                  ext: file.ext,
+                  appId: file.app.id,
+                  pageId: file.page ? file.page.id : undefined,
+                  widgetInstanceId:
+                    file instanceof Component ? file.component.id : undefined,
+                  dataSourceId:
+                    file instanceof DataSourceMetadata ||
+                    file instanceof DataSourceEntries
+                      ? file.dataSource.id
+                      : undefined,
+                  contextValue: file.contextValue,
+                });
+
+                // Fetch rich content
+                if (file.ext === "html") {
+                  const interactVersion = parseInt(
+                    _.get(file.app, "settings.interactVersion") || 2,
+                    10
+                  );
+
+                  if (interactVersion > 2) {
+                    const page = (
+                      await state.api.get(
+                        `v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`
+                      )
+                    ).data.page;
+
+                    if (page && page.richLayout) {
+                      file.content = page.richLayout;
+                    }
+                  }
+                }
+
+                if (file instanceof DataSourceMetadata) {
+                  file.content = JSON.stringify(
+                    _.pick(file.dataSource, [
+                      "name",
+                      "hooks",
+                      "columns",
+                      "definition",
+                      "bundle",
+                      "accessRules",
+                    ]),
+                    null,
+                    2
+                  );
+                } else if (file instanceof DataSourceEntries) {
+                  progress.report({
+                    message: "fetching entries",
+                    increment: 50,
+                  });
+
+                  let entries;
+
+                  try {
+                    entries = (
+                      await state.api.get(
+                        `v1/data-sources/${file.dataSource.id}/data/query?appId=${file.app.id}`
+                      )
+                    ).data.entries;
+
+                    file.entries = entries.map((entry: any) => {
+                      return _.pick(entry, [
+                        "id",
+                        "data",
+                        "createdAt",
+                        "updatedAt",
+                      ]);
+                    });
+                  } catch (err) {
+                    vscode.window.showErrorMessage(_.get(err, 'response.data.message') || err.message);
+                  }
+
+                  file.description = `${file.entries} entries`;
+
+                  file.content = JSON.stringify(file.entries || [], null, 2);
+                }
+
+                if (file instanceof Component) {
+                  file.content = JSON.stringify(
+                    _.get(file.component, "settings"),
+                    null,
+                    2
+                  );
+                }
+
+                fs.writeFileSync(file.uri, file.content || "");
+              } catch (err) {
+                console.error(err);
+                vscode.window.showErrorMessage(err);
               }
             }
 
-            let fileName;
-
-            if (file instanceof Component) {
-              fileName = `${file.component.widget.name.substr(0, 32)}-${
-                file.component.id
-              }`;
-            } else if (file.page) {
-              fileName = `${file.page.title.substr(0, 32)}`;
-            } else {
-              fileName = `${file.app.name.substr(0, 32)}`;
+            if (!file.uri) {
+              return;
             }
 
-            fileName += `.${file.ext}`;
+            progress.report({ increment: 100 });
 
-            file.uri = path.join(basePath, fileName);
-
-            context.workspaceState.update(fileHash(file.uri), {
-              ext: file.ext,
-              appId: file.app.id,
-              pageId: file.page ? file.page.id : undefined,
-              widgetInstanceId:
-                file instanceof Component ? file.component.id : undefined,
+            const doc = await vscode.workspace.openTextDocument(file.uri);
+            const editor = await vscode.window.showTextDocument(doc, {
+              preview: true,
             });
 
-            // Fetch rich content
-            if (file.ext === "html") {
-              const interactVersion = parseInt(
-                _.get(file.app, "settings.interactVersion") || 2,
-                10
-              );
-
-              if (interactVersion > 2) {
-                const page = (
-                  await state.api.get(
-                    `v1/apps/${file.app.id}/pages/${file.page.id}?richLayout`
-                  )
-                ).data.page;
-
-                if (page && page.richLayout) {
-                  file.content = page.richLayout;
-                }
-              }
-            }
-
-            if (file instanceof Component) {
-              file.content = JSON.stringify(
-                _.get(file.component, "settings"),
-                null,
-                2
-              );
-            }
-
-            fs.writeFileSync(file.uri, file.content || "");
-          } catch (err) {
-            console.error(err);
-            vscode.window.showErrorMessage(err);
+            vscode.languages.setTextDocumentLanguage(
+              editor.document,
+              file.type.toString()
+            );
           }
-        }
-
-        if (!file.uri) {
-          return;
-        }
-
-        const doc = await vscode.workspace.openTextDocument(file.uri);
-        const editor = await vscode.window.showTextDocument(doc, {
-          preview: true,
-        });
-
-        vscode.languages.setTextDocumentLanguage(
-          editor.document,
-          file.type.toString()
         );
       }
     );
@@ -718,6 +1032,23 @@ function getWebviewContent(name: string, url: string) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${name}</title>
     <style>* {border:0;margin:0;padding:0;}</style>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" crossorigin="anonymous"></script>
+    <script>
+const vscode = acquireVsCodeApi();
+
+window.addEventListener('message', function (event) {
+  if (event.data) {
+    if (event.data.event === 'set-page') {
+      var $iframe = $('iframe');
+      var src = $iframe.attr('src').replace(/pages\\/([0-9]+)/, 'pages/' + event.data.pageId);
+
+      $iframe.attr('src', src);
+    } else if (event.data.event === 'user-script-error') {
+      vscode.postMessage(event.data);
+    }
+  }
+})
+    </script>
 </head>
 <body>
   <iframe style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;" src="${url}" width="100%" height="100%"></iframe>

@@ -3,7 +3,7 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.0.9",
+	"version": "1.1.1",
 	"engines": {
 		"vscode": "^1.51.0"
 	},
@@ -36,6 +36,11 @@
 				"icon": "$(refresh)"
 			},
 			{
+				"command": "apps.openDeveloperTools",
+				"title": "Open Webview developer tools",
+				"icon": "$(remote-explorer-view-icon)"
+			},
+			{
 				"command": "apps.settings",
 				"title": "User settings and log out",
 				"icon": "$(accounts-view-bar-icon)"
@@ -43,7 +48,7 @@
 			{
 				"command": "page.preview",
 				"title": "Preview page",
-				"icon": "$(ports-open-browser-icon)"
+				"icon": "$(open-preview)"
 			},
 			{
 				"command": "page.configureComponent",
@@ -54,6 +59,11 @@
 				"command": "page.deleteComponent",
 				"title": "Delete component",
 				"icon": "$(notebook-delete-cell)"
+			},
+			{
+				"command": "dataSource.create",
+				"title": "Create new Data Source",
+				"icon": "$(plus)"
 			}
 		],
 		"menus": {
@@ -61,6 +71,11 @@
 				{
 					"command": "apps.refresh",
 					"when": "view == apps",
+					"group": "navigation"
+				},
+				{
+					"command": "apps.openDeveloperTools",
+					"when": "view == apps && loggedIn && hasPreviews",
 					"group": "navigation"
 				},
 				{
@@ -83,6 +98,11 @@
 				{
 					"command": "page.deleteComponent",
 					"when": "view == apps && viewItem == component",
+					"group": "inline"
+				},
+				{
+					"command": "dataSource.create",
+					"when": "view == apps && viewItem == dataSources",
 					"group": "inline"
 				}
 			]

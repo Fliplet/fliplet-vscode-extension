@@ -43,7 +43,7 @@ module.exports.create = function CreateAPI(authToken, url) {
 };
 
 module.exports.previewUrl = function (appId, pageId) {
-  return `${baseURL}v1/apps/${appId}/pages/${pageId}/view?interact=false&auth_token=${currentToken}&disableSecurity&autoreload`;
+  return `${baseURL}v1/apps/${appId}/pages/${pageId}/preview?interact=false&auth_token=${currentToken}&disableSecurity&autoreload`;
 };
 
 module.exports.interfaceUrl = function (widgetInstanceId) {
