@@ -49,3 +49,7 @@ module.exports.previewUrl = function (appId, pageId) {
 module.exports.interfaceUrl = function (widgetInstanceId) {
   return `${baseURL}v1/widget-instances/${widgetInstanceId}/interface?auth_token=${currentToken}`;
 };
+
+module.exports.providerUrl = function (packageName, appId) {
+  return `${baseURL}v1/widgets/${packageName}/interface?auth_token=${currentToken}&organizationId=&appId=&providerMode=fixed&data=%7B%22context%22%3A%22app-overlay%22%2C%22appId%22%3A${appId}%7D`;
+};

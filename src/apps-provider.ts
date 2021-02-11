@@ -604,26 +604,30 @@ export class FileExplorer {
           try {
             if (data.dataSourceId) {
               if (data.contextValue === "dataSourceEntries") {
-                const entries = (await state.api.post(
-                  `v1/data-sources/${data.dataSourceId}/commit`,
-                  {
-                    entries: JSON.parse(content),
-                    source: "vscode",
-                  }
-                )).data.entries;
+                const entries = (
+                  await state.api.post(
+                    `v1/data-sources/${data.dataSourceId}/commit`,
+                    {
+                      entries: JSON.parse(content),
+                      source: "vscode",
+                    }
+                  )
+                ).data.entries;
 
-                updateDoc(JSON.stringify(
-                  entries.map((entry: any) => {
-                    return _.pick(entry, [
-                      "id",
-                      "data",
-                      "createdAt",
-                      "updatedAt",
-                    ]);
-                  }),
-                  null,
-                  2
-                ));
+                updateDoc(
+                  JSON.stringify(
+                    entries.map((entry: any) => {
+                      return _.pick(entry, [
+                        "id",
+                        "data",
+                        "createdAt",
+                        "updatedAt",
+                      ]);
+                    }),
+                    null,
+                    2
+                  )
+                );
               } else if (data.contextValue === "dataSourceMetadata") {
                 await state.api.put(
                   `v1/data-sources/${data.dataSourceId}`,
@@ -684,7 +688,9 @@ export class FileExplorer {
             progress.report({ increment: 100 });
           } catch (err) {
             console.error(err);
-            vscode.window.showErrorMessage(_.get(err, 'response.data.message') || err.message);
+            vscode.window.showErrorMessage(
+              _.get(err, "response.data.message") || err.message
+            );
           }
         }
       );
@@ -751,19 +757,7 @@ export class FileExplorer {
 
         vscode.commands.executeCommand("setContext", "hasPreviews", true);
 
-        // Handle messages from the webview
-        panel.webview.onDidReceiveMessage(
-          (data) => {
-            switch (data.event) {
-              case "widget-save-complete":
-                panel.dispose();
-                treeDataProvider.refresh();
-                return;
-            }
-          },
-          undefined,
-          context.subscriptions
-        );
+        bindModalDialogs(panel);
 
         panel.webview.html = getInterfaceWebViewContent(title, url);
       }
@@ -790,6 +784,77 @@ export class FileExplorer {
               );
             }
           });
+      }
+    );
+
+    function bindModalDialogs(panel: vscode.WebviewPanel) {
+      // Handle messages from the webview
+      panel.webview.onDidReceiveMessage(
+        (data) => {
+          switch (data.event) {
+            case "widget-save-complete":
+              panel.dispose();
+              treeDataProvider.refresh();
+              return;
+            case "dialog":
+              switch (data.type) {
+                case "alert":
+                  vscode.window.showInformationMessage(data.message);
+                  return;
+                case "prompt":
+                  vscode.window
+                    .showInputBox({
+                      prompt: data.message
+                    })
+                    .then(async (result) => {
+                      panel.webview.postMessage({
+                        event: data.name,
+                        result,
+                        forward: true
+                      });
+                    });
+                  return;
+                case "confirm":
+                  vscode.window
+                    .showInformationMessage(data.message, "Yes", "No")
+                    .then(async (result) => {
+                      if (result === "Yes") {
+                        panel.webview.postMessage({
+                          event: data.name,
+                          result,
+                          forward: true
+                        });
+                      }
+                    });
+                  return;
+              }
+              return;
+          }
+        },
+        undefined,
+        context.subscriptions
+      );
+    }
+
+    vscode.commands.registerCommand(
+      "dataSources.manage",
+      async function (instance: DataSources) {
+        const url = api.providerUrl(
+          "com.fliplet.data-sources",
+          instance.app.id
+        );
+        const title = `${instance.app.name} - Data Sources`;
+
+        const panel = vscode.window.createWebviewPanel(
+          `${instance.app.id.toString()}-dataSources`,
+          title,
+          vscode.ViewColumn.Two,
+          {
+            enableScripts: true,
+          }
+        );
+
+        panel.webview.html = getInterfaceWebViewContent(title, url);
       }
     );
 
@@ -989,7 +1054,9 @@ export class FileExplorer {
                       ]);
                     });
                   } catch (err) {
-                    vscode.window.showErrorMessage(_.get(err, 'response.data.message') || err.message);
+                    vscode.window.showErrorMessage(
+                      _.get(err, "response.data.message") || err.message
+                    );
                   }
 
                   file.description = `${file.entries} entries`;
@@ -1129,7 +1196,13 @@ const vscode = acquireVsCodeApi();
 
 window.addEventListener('message', function (event) {
   if (event.data) {
-    if (event.data.event === 'widget-save-complete') {
+    if (event.data.forward) {
+      var $iframe = $('iframe.interface');
+      $iframe[0].contentWindow.postMessage(event.data, '*');
+      return;
+    }
+
+    if (event.data.event === 'widget-save-complete' || event.data.event === 'dialog') {
       vscode.postMessage(event.data);
     }
   }
