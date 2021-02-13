@@ -708,7 +708,6 @@ export class FileExplorer {
     vscode.commands.registerCommand(
       "page.preview",
       async (item: Page | File) => {
-        const url = api.previewUrl(item.app.id, item.page.id);
         const pageData = item.page;
         const title = `${pageData.title} (${item.app.name})`;
 
@@ -723,6 +722,19 @@ export class FileExplorer {
 
         vscode.commands.executeCommand("setContext", "hasPreviews", true);
 
+        async function loadPage(pageId: number | string) {
+          const url = api.previewUrl(item.app.id, pageId);
+
+          let data = (await state.api.get(url)).data;
+
+          data = data.replace('<!-- RUNTIME LIBRARIES -->', `
+            <script>window.parent = acquireVsCodeApi();</script>
+            <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';" />
+          `);
+
+          panel.webview.html = data;
+        }
+
         // Handle messages from the webview
         panel.webview.onDidReceiveMessage(
           (data) => {
@@ -730,13 +742,16 @@ export class FileExplorer {
               case "user-script-error":
                 vscode.window.showErrorMessage(data.error);
                 return;
+              case "set-page":
+                loadPage(data.pageId);
+                return;
             }
           },
           undefined,
           context.subscriptions
         );
 
-        panel.webview.html = getWebviewContent(title, url);
+        loadPage(item.page.id);
       }
     );
 
@@ -1105,38 +1120,6 @@ export class FileExplorer {
   refresh() {
     this.treeDataProvider.refresh();
   }
-}
-
-function getWebviewContent(name: string, url: string) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${name}</title>
-    <style>* {border:0;margin:0;padding:0;}</style>
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" crossorigin="anonymous"></script>
-    <script>
-const vscode = acquireVsCodeApi();
-
-window.addEventListener('message', function (event) {
-  if (event.data) {
-    if (event.data.event === 'set-page') {
-      var $iframe = $('iframe');
-      var src = $iframe.attr('src').replace(/pages\\/([0-9]+)/, 'pages/' + event.data.pageId);
-
-      $iframe.attr('src', src);
-    } else if (event.data.event === 'user-script-error') {
-      vscode.postMessage(event.data);
-    }
-  }
-});
-    </script>
-</head>
-<body>
-  <iframe style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;" src="${url}" width="100%" height="100%"></iframe>
-</body>
-</html>`;
 }
 
 function getInterfaceWebViewContent(name: string, url: string) {
