@@ -12,3 +12,11 @@ This extension adds a new sidebar icon where you can log in with your Fliplet St
 2. Increase version on `package.json` file
 3. Run `vsce publish` to package the version as a new vsix file
 4. Upload the version via the UI at https://marketplace.visualstudio.com/manage/publishers/fliplet
+
+
+---
+
+### Future support for web
+
+- Follow requirements in https://code.visualstudio.com/api/extension-guides/web-extensions
+- Change FS usage to https://code.visualstudio.com/api/references/vscode-api#FileSystemProvider or https://github.com/jvilk/BrowserFS

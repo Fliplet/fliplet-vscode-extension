@@ -3,7 +3,7 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.1.5",
+	"version": "1.1.7",
 	"engines": {
 		"vscode": "^1.51.0"
 	},
@@ -24,7 +24,6 @@
 	},
 	"icon": "media/icon.png",
 	"main": "./dist/extension.js",
-	"browser": "./dist/extension.js",
 	"contributes": {
 		"commands": [
 			{
