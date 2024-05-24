@@ -3,7 +3,7 @@
 	"publisher": "fliplet",
 	"displayName": "Fliplet Developer Tools",
 	"description": "Manage code for your Fliplet Apps via Visual Studio Code",
-	"version": "1.1.7",
+	"version": "1.2.0",
 	"engines": {
 		"vscode": "^1.51.0"
 	},
@@ -11,8 +11,8 @@
 		"Other"
 	],
 	"author": {
-    "name": "Fliplet Apps"
-  },
+		"name": "Fliplet Apps"
+	},
 	"activationEvents": [
 		"onCommand:fliplet.signin",
 		"onView:account",
@@ -198,7 +198,6 @@
 	"dependencies": {
 		"axios": "^0.21.1",
 		"fs-temp": "^1.2.1",
-		"keytar": "^7.3.0",
 		"md5": "^2.3.0",
 		"moment": "^2.29.1",
 		"tmp": "^0.2.1"
