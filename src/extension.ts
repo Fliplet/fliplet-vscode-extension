@@ -6,11 +6,37 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+const axios = require("axios").default;
 const _ = require("lodash");
+
+import { env } from "vscode";
+import * as keytarType from "keytar";
 
 const state = require("./state");
 const api = require("./api");
 
+declare const __webpack_require__: typeof require;
+declare const __non_webpack_require__: typeof require;
+
+function getNodeModule<T>(moduleName: string): T | undefined {
+  const r =
+    typeof __webpack_require__ === "function"
+      ? __non_webpack_require__
+      : require;
+  try {
+    return r(`${env.appRoot}/node_modules.asar/${moduleName}`);
+  } catch (err) {
+    // Not in ASAR.
+  }
+  try {
+    return r(`${env.appRoot}/node_modules/${moduleName}`);
+  } catch (err) {
+    // Not available.
+  }
+  return undefined;
+}
+
+const keytar = getNodeModule<typeof keytarType>("keytar");
 import { FileExplorer } from "./apps-provider";
 import { DependencyExplorer } from "./dependencies";
 
@@ -67,31 +93,34 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(disposable);
 
-  const authToken: string | undefined = await currentContext.secrets.get(
-    "authToken"
-  );
+  if (keytar) {
+    const authToken: string | null = await keytar.getPassword(
+      extensionId,
+      "authToken"
+    );
 
-  if (authToken) {
-    verify(authToken);
-  } else {
-    api.create();
-  }
-
-  _.forIn(
-    (await state.api.get("v1/widgets/assets")).data.assets,
-    (value: any, name: string) => {
-      if (value.reference) {
-        value.name = name;
-        state.dependencies.push(value);
-      }
+    if (authToken) {
+      verify(authToken);
+    } else {
+      api.create();
     }
-  );
 
-  state.dependencies = _.sortBy(state.dependencies, "name");
+    _.forIn(
+      (await state.api.get("v1/widgets/assets")).data.assets,
+      (value: any, name: string) => {
+        if (value.reference) {
+          value.name = name;
+          state.dependencies.push(value);
+        }
+      }
+    );
 
-  dependenciesTree = new DependencyExplorer(context);
+    state.dependencies = _.sortBy(state.dependencies, "name");
 
-  vscode.commands.executeCommand("setContext", "hasDependencies", true);
+    dependenciesTree = new DependencyExplorer(context);
+
+    vscode.commands.executeCommand("setContext", "hasDependencies", true);
+  }
 }
 
 vscode.commands.registerCommand("apps.refresh", function () {
@@ -165,12 +194,18 @@ vscode.commands.registerCommand("apps.settings", async function () {
         ).data;
         const authToken = data.session.auth_token;
 
-        const currentAuthToken: string | any = await currentContext.secrets.get(
+        if (!keytar) {
+          return;
+        }
+
+        const currentAuthToken: string | any = await keytar.getPassword(
+          extensionId,
           "authToken"
         );
 
         if (currentAuthToken) {
-          await currentContext.secrets.store(
+          await keytar.setPassword(
+            extensionId,
             "previousAuthToken",
             currentAuthToken
           );
@@ -190,16 +225,19 @@ vscode.commands.registerCommand("apps.settings", async function () {
 
       currentContext.workspaceState.update("isImpersonating", false);
 
-        const previousAuthToken: string | any = await currentContext.secrets.get(
+      if (keytar) {
+        const previousAuthToken: string | any = await keytar.getPassword(
+          extensionId,
           "previousAuthToken"
         );
 
         if (previousAuthToken) {
-          await currentContext.secrets.delete("previousAuthToken");
+          await keytar.deletePassword(extensionId, "previousAuthToken");
           verify(previousAuthToken);
         } else {
           vscode.commands.executeCommand("setContext", "loggedIn", false);
         }
+      }
     }
   });
 
@@ -209,7 +247,9 @@ vscode.commands.registerCommand("apps.settings", async function () {
 async function logout() {
   await state.api.post("v1/auth/logout");
 
-  await  currentContext.secrets.delete("authToken");
+  if (keytar) {
+    keytar.deletePassword(extensionId, "authToken");
+  }
 
   currentContext.workspaceState.update("isImpersonating", false);
   vscode.commands.executeCommand("setContext", "loggedIn", false);
@@ -279,7 +319,9 @@ async function verify(authToken: string) {
 
         progress.report({ message: "Retrieving apps...", increment: 80 });
 
-        await currentContext.secrets.store("authToken", authToken);
+        if (keytar) {
+          await keytar.setPassword(extensionId, "authToken", authToken);
+        }
 
         if (!statusBarItem) {
           statusBarItem = vscode.window.createStatusBarItem(
