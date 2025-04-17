@@ -5,7 +5,7 @@ const vscode = require('vscode');
 
 const version = vscode.extensions.getExtension('fliplet.vscode').packageJSON.version;
 
-const primaryBaseURL = "https://api.fliplet.com/";
+const primaryBaseURL = "https://staging.api.fliplet.com/";
 let currentToken;
 
 let baseURL = primaryBaseURL;

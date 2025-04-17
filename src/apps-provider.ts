@@ -116,10 +116,10 @@ export class AppsProvider
 
   private _onDidChangeFile: vscode.EventEmitter<vscode.FileChangeEvent[]>;
   private _onDidChangeTreeData: vscode.EventEmitter<
-    App | undefined | null | void
-  > = new vscode.EventEmitter<App | undefined | null | void>();
+    App | undefined | null
+  > = new vscode.EventEmitter<App | undefined | null>();
   readonly onDidChangeTreeData: vscode.Event<
-    App | undefined | null | void
+    App | undefined | null
   > = this._onDidChangeTreeData.event;
 
   get onDidChangeFile(): vscode.Event<vscode.FileChangeEvent[]> {
@@ -157,7 +157,7 @@ export class AppsProvider
   }
 
   refresh(): void {
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(undefined);
   }
 
   getTreeItem(element: App): vscode.TreeItem {
@@ -194,7 +194,7 @@ class Page extends vscode.TreeItem {
   }
 
   contextValue = "screen";
-  iconPath = new vscode.ThemeIcon("notebook-render-output");
+  iconPath = 'output';
 
   getChildren() {
     return Promise.resolve([
@@ -257,7 +257,7 @@ class Component extends vscode.TreeItem {
     ).fromNow()}`;
   }
 
-  iconPath = new vscode.ThemeIcon("symbol-misc");
+  iconPath = 'symbol-misc';
   contextValue = "component";
 
   command = {
@@ -279,7 +279,7 @@ class Components extends vscode.TreeItem {
     super(label || "Components", collapsibleState);
   }
 
-  iconPath = new vscode.ThemeIcon("extensions-view-icon");
+  iconPath = 'extensions';
 
   async getChildren() {
     if (!Array.isArray(this.components)) {
@@ -343,7 +343,7 @@ class DataSourceEntries extends vscode.TreeItem {
     this.type = vscode.FileType.File;
   }
 
-  iconPath = new vscode.ThemeIcon("symbol-keyword");
+  iconPath = 'symbol-keyword';
   contextValue = "dataSourceEntries";
 
   command = {
@@ -365,7 +365,7 @@ class DataSourceMetadata extends vscode.TreeItem {
     this.type = vscode.FileType.File;
   }
 
-  iconPath = new vscode.ThemeIcon("symbol-constant");
+  iconPath = 'symbol-constant';
   contextValue = "dataSourceMetadata";
 
   command = {
@@ -396,7 +396,7 @@ class DataSource extends vscode.TreeItem {
     } columns`;
   }
 
-  iconPath = new vscode.ThemeIcon("symbol-function");
+  iconPath = 'symbol-function';
   contextValue = "dataSource";
 
   async getChildren() {
@@ -421,7 +421,7 @@ class DataSources extends vscode.TreeItem {
     super("Data Sources", collapsibleState);
   }
 
-  iconPath = new vscode.ThemeIcon("database");
+  iconPath = 'database';
   contextValue = "dataSources";
 
   async getChildren() {
@@ -541,7 +541,7 @@ class File extends vscode.TreeItem {
     arguments: [this],
   };
 
-  iconPath = new vscode.ThemeIcon("notebook-open-as-text");
+  iconPath = 'file-text';
 
   async getChildren() {
     return Promise.resolve([]);
@@ -686,7 +686,7 @@ export class FileExplorer {
             treeDataProvider.refresh();
 
             progress.report({ increment: 100 });
-          } catch (err) {
+          } catch (err: any) {
             console.error(err);
             vscode.window.showErrorMessage(
               _.get(err, "response.data.message") || err.message
@@ -920,7 +920,7 @@ export class FileExplorer {
               );
 
               treeDataProvider.refresh();
-            } catch (err) {
+            } catch (err: any) {
               vscode.window.showErrorMessage(err.message);
             }
           });
@@ -1068,7 +1068,7 @@ export class FileExplorer {
                         "updatedAt",
                       ]);
                     });
-                  } catch (err) {
+                  } catch (err: any) {
                     vscode.window.showErrorMessage(
                       _.get(err, "response.data.message") || err.message
                     );
@@ -1088,9 +1088,9 @@ export class FileExplorer {
                 }
 
                 fs.writeFileSync(file.uri, file.content || "");
-              } catch (err) {
+              } catch (err: any) {
                 console.error(err);
-                vscode.window.showErrorMessage(err);
+                vscode.window.showErrorMessage(String(err));
               }
             }
 

@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { URLSearchParams } from "url";
 
 const _ = require("lodash");
 
@@ -31,20 +32,41 @@ export async function activate(context: vscode.ExtensionContext) {
   try {
     fs.mkdirSync(path.join(os.tmpdir(), "fliplet"));
   } catch (err) {
-    vscode.window.showErrorMessage(err);
+    vscode.window.showErrorMessage(String(err));
   }
 
-  // Register a URI handler for the authentication callback
-  vscode.window.registerUriHandler({
-    handleUri: function (uri) {
-      // Add your code for what to do when the authentication completes here.
-      if (uri.path.indexOf("/auth-complete") === 0) {
-        const authToken = uri.query.replace("auth_token=", "") as string;
+  // Define the handler object with explicit type
+  const uriHandler: vscode.UriHandler = {
+    handleUri(uri: vscode.Uri): vscode.ProviderResult<void> {
+      if (uri.path === "/auth-complete" && uri.query) {
+        const queryParams = new URLSearchParams(uri.query);
+        const authToken = queryParams.get("auth_token");
 
-        return verify(authToken);
+        if (authToken) {
+          // Return the promise, let the framework handle it.
+          // Catch errors locally to show messages.
+          return verify(authToken).catch((err) => {
+            console.error("Verification failed:", err);
+            vscode.window.showErrorMessage(
+              "Authentication verification failed."
+            );
+            // Return undefined from catch to satisfy ProviderResult<void>
+            return undefined;
+          });
+        } else {
+          console.error("Auth token missing in callback URI query.");
+          vscode.window.showErrorMessage(
+            "Authentication failed: Auth token not found."
+          );
+        }
       }
-    },
-  });
+      // Return undefined if the path/query don't match or no token
+      return undefined;
+    }
+  };
+
+  // Register the explicitly typed handler
+  context.subscriptions.push(vscode.window.registerUriHandler(uriHandler));
 
   let disposable = vscode.commands.registerCommand(
     "fliplet.signin",
