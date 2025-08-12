@@ -72,7 +72,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   if (authToken) {
-    verify(authToken);
+    await verify(authToken);
   } else {
     api.create();
   }
@@ -196,7 +196,7 @@ vscode.commands.registerCommand("apps.settings", async function () {
 
         if (previousAuthToken) {
           await currentContext.secrets.delete("previousAuthToken");
-          verify(previousAuthToken);
+          await verify(previousAuthToken);
         } else {
           vscode.commands.executeCommand("setContext", "loggedIn", false);
         }
