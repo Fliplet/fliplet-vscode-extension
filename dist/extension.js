@@ -24,9 +24,10 @@ const vscode = __webpack_require__(1);
 const fs = __webpack_require__(2);
 const path = __webpack_require__(3);
 const os = __webpack_require__(4);
-const _ = __webpack_require__(5);
-const state = __webpack_require__(6);
-const api = __webpack_require__(7);
+const url_1 = __webpack_require__(5);
+const _ = __webpack_require__(6);
+const state = __webpack_require__(7);
+const api = __webpack_require__(8);
 const apps_provider_1 = __webpack_require__(54);
 const dependencies_1 = __webpack_require__(196);
 const extensionId = "fliplet.vscode";
@@ -46,27 +47,42 @@ function activate(context) {
         catch (err) {
             vscode.window.showErrorMessage(err);
         }
-        // Register a URI handler for the authentication callback
+        // Register a URI handler for the authentication callback.
+        // The unified Fliplet sign-in page navigates to this URI on success
+        // with the auth token in the query string: ?token=<token>&user=<base64-json>
         vscode.window.registerUriHandler({
             handleUri: function (uri) {
-                // Add your code for what to do when the authentication completes here.
-                if (uri.path.indexOf("/auth-complete") === 0) {
-                    const authToken = uri.query.replace("auth_token=", "");
-                    return verify(authToken);
+                if (uri.path.indexOf("/auth-complete") !== 0) {
+                    return;
                 }
+                // Parse query string properly (handles multiple params + URL-encoding).
+                const params = new url_1.URLSearchParams(uri.query);
+                const authToken = params.get("token");
+                if (!authToken) {
+                    vscode.window.showErrorMessage("Fliplet sign-in failed: no token returned from the sign-in flow.");
+                    return;
+                }
+                return verify(authToken);
             },
         });
         let disposable = vscode.commands.registerCommand("fliplet.signin", function () {
             return __awaiter(this, void 0, void 0, function* () {
                 const callbackUri = yield vscode.env.asExternalUri(vscode.Uri.parse(`${vscode.env.uriScheme}://${extensionId}/auth-complete`));
-                const uri = vscode.Uri.parse(`${api.baseURL()}v1/auth/third-party?redirect=${encodeURIComponent(callbackUri.toString())}&responseType=code&source=VSCode&title=Sign%20in%20to%20Authorize%20Visual%20Studio%20Code`);
+                // Unified sign-in flow — replaces the legacy /v1/auth/third-party
+                // endpoint. The Fliplet API page validates the callback URL against
+                // an allow-list (vscode://, cursor://, etc) and on success navigates
+                // the browser to <callback>?token=XXX&user=<base64-json>.
+                const uri = vscode.Uri.parse(`${api.baseURL()}v1/auth/login`
+                    + `?return=callback`
+                    + `&callback=${encodeURIComponent(callbackUri.toString())}`
+                    + `&source=VSCode`);
                 vscode.env.openExternal(uri);
             });
         });
         context.subscriptions.push(disposable);
         const authToken = yield currentContext.secrets.get("authToken");
         if (authToken) {
-            verify(authToken);
+            yield verify(authToken);
         }
         else {
             api.create();
@@ -159,7 +175,7 @@ vscode.commands.registerCommand("apps.settings", function () {
                 const previousAuthToken = yield currentContext.secrets.get("previousAuthToken");
                 if (previousAuthToken) {
                     yield currentContext.secrets.delete("previousAuthToken");
-                    verify(previousAuthToken);
+                    yield verify(previousAuthToken);
                 }
                 else {
                     vscode.commands.executeCommand("setContext", "loggedIn", false);
@@ -273,6 +289,13 @@ module.exports = require("os");;
 
 /***/ }),
 /* 5 */
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("url");;
+
+/***/ }),
+/* 6 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /* module decorator */ module = __webpack_require__.nmd(module);
@@ -290,15 +313,14 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
   var undefined;
 
   /** Used as the semantic version number. */
-  var VERSION = '4.17.21';
+  var VERSION = '4.17.20';
 
   /** Used as the size to enable large array optimizations. */
   var LARGE_ARRAY_SIZE = 200;
 
   /** Error message constants. */
   var CORE_ERROR_TEXT = 'Unsupported core-js use. Try https://npms.io/search?q=ponyfill.',
-      FUNC_ERROR_TEXT = 'Expected a function',
-      INVALID_TEMPL_VAR_ERROR_TEXT = 'Invalid `variable` option passed into `_.template`';
+      FUNC_ERROR_TEXT = 'Expected a function';
 
   /** Used to stand-in for `undefined` hash values. */
   var HASH_UNDEFINED = '__lodash_hash_undefined__';
@@ -431,11 +453,10 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
   var reRegExpChar = /[\\^$.*+?()[\]{}|]/g,
       reHasRegExpChar = RegExp(reRegExpChar.source);
 
-  /** Used to match leading whitespace. */
-  var reTrimStart = /^\s+/;
-
-  /** Used to match a single whitespace character. */
-  var reWhitespace = /\s/;
+  /** Used to match leading and trailing whitespace. */
+  var reTrim = /^\s+|\s+$/g,
+      reTrimStart = /^\s+/,
+      reTrimEnd = /\s+$/;
 
   /** Used to match wrap detail comments. */
   var reWrapComment = /\{(?:\n\/\* \[wrapped with .+\] \*\/)?\n?/,
@@ -444,18 +465,6 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
 
   /** Used to match words composed of alphanumeric characters. */
   var reAsciiWord = /[^\x00-\x2f\x3a-\x40\x5b-\x60\x7b-\x7f]+/g;
-
-  /**
-   * Used to validate the `validate` option in `_.template` variable.
-   *
-   * Forbids characters which could potentially change the meaning of the function argument definition:
-   * - "()," (modification of function parameters)
-   * - "=" (default value)
-   * - "[]{}" (destructuring of function parameters)
-   * - "/" (beginning of a comment)
-   * - whitespace
-   */
-  var reForbiddenIdentifierChars = /[()=,{}\[\]\/\s]/;
 
   /** Used to match backslashes in property paths. */
   var reEscapeChar = /\\(\\)?/g;
@@ -1286,19 +1295,6 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
   }
 
   /**
-   * The base implementation of `_.trim`.
-   *
-   * @private
-   * @param {string} string The string to trim.
-   * @returns {string} Returns the trimmed string.
-   */
-  function baseTrim(string) {
-    return string
-      ? string.slice(0, trimmedEndIndex(string) + 1).replace(reTrimStart, '')
-      : string;
-  }
-
-  /**
    * The base implementation of `_.unary` without support for storing metadata.
    *
    * @private
@@ -1629,21 +1625,6 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
     return hasUnicode(string)
       ? unicodeToArray(string)
       : asciiToArray(string);
-  }
-
-  /**
-   * Used by `_.trim` and `_.trimEnd` to get the index of the last non-whitespace
-   * character of `string`.
-   *
-   * @private
-   * @param {string} string The string to inspect.
-   * @returns {number} Returns the index of the last non-whitespace character.
-   */
-  function trimmedEndIndex(string) {
-    var index = string.length;
-
-    while (index-- && reWhitespace.test(string.charAt(index))) {}
-    return index;
   }
 
   /**
@@ -12814,7 +12795,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
       if (typeof value != 'string') {
         return value === 0 ? value : +value;
       }
-      value = baseTrim(value);
+      value = value.replace(reTrim, '');
       var isBinary = reIsBinary.test(value);
       return (isBinary || reIsOctal.test(value))
         ? freeParseInt(value.slice(2), isBinary ? 2 : 8)
@@ -15186,12 +15167,6 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
       if (!variable) {
         source = 'with (obj) {\n' + source + '\n}\n';
       }
-      // Throw an error if a forbidden character was found in `variable`, to prevent
-      // potential command injection attacks.
-      else if (reForbiddenIdentifierChars.test(variable)) {
-        throw new Error(INVALID_TEMPL_VAR_ERROR_TEXT);
-      }
-
       // Cleanup code by stripping empty strings.
       source = (isEvaluating ? source.replace(reEmptyStringLeading, '') : source)
         .replace(reEmptyStringMiddle, '$1')
@@ -15305,7 +15280,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
     function trim(string, chars, guard) {
       string = toString(string);
       if (string && (guard || chars === undefined)) {
-        return baseTrim(string);
+        return string.replace(reTrim, '');
       }
       if (!string || !(chars = baseToString(chars))) {
         return string;
@@ -15340,7 +15315,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
     function trimEnd(string, chars, guard) {
       string = toString(string);
       if (string && (guard || chars === undefined)) {
-        return string.slice(0, trimmedEndIndex(string) + 1);
+        return string.replace(reTrimEnd, '');
       }
       if (!string || !(chars = baseToString(chars))) {
         return string;
@@ -17480,7 +17455,7 @@ var __WEBPACK_AMD_DEFINE_RESULT__;/**
 
 
 /***/ }),
-/* 6 */
+/* 7 */
 /***/ ((module) => {
 
 module.exports = {
@@ -17497,12 +17472,12 @@ module.exports = {
 };
 
 /***/ }),
-/* 7 */
+/* 8 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 /* eslint-disable @typescript-eslint/naming-convention */
-const state = __webpack_require__(6);
-const axios = __webpack_require__(8).default;
+const state = __webpack_require__(7);
+const axios = __webpack_require__(9).default;
 const vscode = __webpack_require__(1);
 
 const version = vscode.extensions.getExtension('fliplet.vscode').packageJSON.version;
@@ -17557,23 +17532,23 @@ module.exports.providerUrl = function (packageName, appId) {
 };
 
 /***/ }),
-/* 8 */
+/* 9 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
-module.exports = __webpack_require__(9);
+module.exports = __webpack_require__(10);
 
 /***/ }),
-/* 9 */
+/* 10 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var bind = __webpack_require__(11);
-var Axios = __webpack_require__(12);
+var utils = __webpack_require__(11);
+var bind = __webpack_require__(12);
+var Axios = __webpack_require__(13);
 var mergeConfig = __webpack_require__(49);
-var defaults = __webpack_require__(18);
+var defaults = __webpack_require__(19);
 
 /**
  * Create an instance of Axios
@@ -17608,7 +17583,7 @@ axios.create = function create(instanceConfig) {
 // Expose Cancel & CancelToken
 axios.Cancel = __webpack_require__(50);
 axios.CancelToken = __webpack_require__(51);
-axios.isCancel = __webpack_require__(17);
+axios.isCancel = __webpack_require__(18);
 
 // Expose all/spread
 axios.all = function all(promises) {
@@ -17626,13 +17601,13 @@ module.exports.default = axios;
 
 
 /***/ }),
-/* 10 */
+/* 11 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var bind = __webpack_require__(11);
+var bind = __webpack_require__(12);
 
 /*global toString:true*/
 
@@ -17984,7 +17959,7 @@ module.exports = {
 
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ ((module) => {
 
 "use strict";
@@ -18002,16 +17977,16 @@ module.exports = function bind(fn, thisArg) {
 
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var buildURL = __webpack_require__(13);
-var InterceptorManager = __webpack_require__(14);
-var dispatchRequest = __webpack_require__(15);
+var utils = __webpack_require__(11);
+var buildURL = __webpack_require__(14);
+var InterceptorManager = __webpack_require__(15);
+var dispatchRequest = __webpack_require__(16);
 var mergeConfig = __webpack_require__(49);
 
 /**
@@ -18104,13 +18079,13 @@ module.exports = Axios;
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 function encode(val) {
   return encodeURIComponent(val).
@@ -18181,13 +18156,13 @@ module.exports = function buildURL(url, params, paramsSerializer) {
 
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 function InterceptorManager() {
   this.handlers = [];
@@ -18240,16 +18215,16 @@ module.exports = InterceptorManager;
 
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var transformData = __webpack_require__(16);
-var isCancel = __webpack_require__(17);
-var defaults = __webpack_require__(18);
+var utils = __webpack_require__(11);
+var transformData = __webpack_require__(17);
+var isCancel = __webpack_require__(18);
+var defaults = __webpack_require__(19);
 
 /**
  * Throws a `Cancel` if cancellation has been requested.
@@ -18326,13 +18301,13 @@ module.exports = function dispatchRequest(config) {
 
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 /**
  * Transform the data for a request or a response
@@ -18353,7 +18328,7 @@ module.exports = function transformData(data, headers, fns) {
 
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ ((module) => {
 
 "use strict";
@@ -18365,14 +18340,14 @@ module.exports = function isCancel(value) {
 
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var normalizeHeaderName = __webpack_require__(19);
+var utils = __webpack_require__(11);
+var normalizeHeaderName = __webpack_require__(20);
 
 var DEFAULT_CONTENT_TYPE = {
   'Content-Type': 'application/x-www-form-urlencoded'
@@ -18388,10 +18363,10 @@ function getDefaultAdapter() {
   var adapter;
   if (typeof XMLHttpRequest !== 'undefined') {
     // For browsers use XHR adapter
-    adapter = __webpack_require__(20);
+    adapter = __webpack_require__(21);
   } else if (typeof process !== 'undefined' && Object.prototype.toString.call(process) === '[object process]') {
     // For node use HTTP adapter
-    adapter = __webpack_require__(30);
+    adapter = __webpack_require__(31);
   }
   return adapter;
 }
@@ -18470,13 +18445,13 @@ module.exports = defaults;
 
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 module.exports = function normalizeHeaderName(headers, normalizedName) {
   utils.forEach(headers, function processHeader(value, name) {
@@ -18489,20 +18464,20 @@ module.exports = function normalizeHeaderName(headers, normalizedName) {
 
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var settle = __webpack_require__(21);
-var cookies = __webpack_require__(24);
-var buildURL = __webpack_require__(13);
-var buildFullPath = __webpack_require__(25);
-var parseHeaders = __webpack_require__(28);
-var isURLSameOrigin = __webpack_require__(29);
-var createError = __webpack_require__(22);
+var utils = __webpack_require__(11);
+var settle = __webpack_require__(22);
+var cookies = __webpack_require__(25);
+var buildURL = __webpack_require__(14);
+var buildFullPath = __webpack_require__(26);
+var parseHeaders = __webpack_require__(29);
+var isURLSameOrigin = __webpack_require__(30);
+var createError = __webpack_require__(23);
 
 module.exports = function xhrAdapter(config) {
   return new Promise(function dispatchXhrRequest(resolve, reject) {
@@ -18675,13 +18650,13 @@ module.exports = function xhrAdapter(config) {
 
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var createError = __webpack_require__(22);
+var createError = __webpack_require__(23);
 
 /**
  * Resolve or reject a Promise based on response status.
@@ -18707,13 +18682,13 @@ module.exports = function settle(resolve, reject, response) {
 
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var enhanceError = __webpack_require__(23);
+var enhanceError = __webpack_require__(24);
 
 /**
  * Create an Error with the specified message, config, error code, request and response.
@@ -18732,7 +18707,7 @@ module.exports = function createError(message, config, code, request, response) 
 
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ ((module) => {
 
 "use strict";
@@ -18781,13 +18756,13 @@ module.exports = function enhanceError(error, config, code, request, response) {
 
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 module.exports = (
   utils.isStandardBrowserEnv() ?
@@ -18841,14 +18816,14 @@ module.exports = (
 
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var isAbsoluteURL = __webpack_require__(26);
-var combineURLs = __webpack_require__(27);
+var isAbsoluteURL = __webpack_require__(27);
+var combineURLs = __webpack_require__(28);
 
 /**
  * Creates a new URL by combining the baseURL with the requestedURL,
@@ -18868,7 +18843,7 @@ module.exports = function buildFullPath(baseURL, requestedURL) {
 
 
 /***/ }),
-/* 26 */
+/* 27 */
 /***/ ((module) => {
 
 "use strict";
@@ -18889,7 +18864,7 @@ module.exports = function isAbsoluteURL(url) {
 
 
 /***/ }),
-/* 27 */
+/* 28 */
 /***/ ((module) => {
 
 "use strict";
@@ -18910,13 +18885,13 @@ module.exports = function combineURLs(baseURL, relativeURL) {
 
 
 /***/ }),
-/* 28 */
+/* 29 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 // Headers whose duplicates are ignored by node
 // c.f. https://nodejs.org/api/http.html#http_message_headers
@@ -18970,13 +18945,13 @@ module.exports = function parseHeaders(headers) {
 
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 module.exports = (
   utils.isStandardBrowserEnv() ?
@@ -19045,25 +19020,25 @@ module.exports = (
 
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
 "use strict";
 
 
-var utils = __webpack_require__(10);
-var settle = __webpack_require__(21);
-var buildFullPath = __webpack_require__(25);
-var buildURL = __webpack_require__(13);
-var http = __webpack_require__(31);
-var https = __webpack_require__(32);
-var httpFollow = __webpack_require__(33).http;
-var httpsFollow = __webpack_require__(33).https;
-var url = __webpack_require__(34);
+var utils = __webpack_require__(11);
+var settle = __webpack_require__(22);
+var buildFullPath = __webpack_require__(26);
+var buildURL = __webpack_require__(14);
+var http = __webpack_require__(32);
+var https = __webpack_require__(33);
+var httpFollow = __webpack_require__(34).http;
+var httpsFollow = __webpack_require__(34).https;
+var url = __webpack_require__(5);
 var zlib = __webpack_require__(47);
 var pkg = __webpack_require__(48);
-var createError = __webpack_require__(22);
-var enhanceError = __webpack_require__(23);
+var createError = __webpack_require__(23);
+var enhanceError = __webpack_require__(24);
 
 var isHttps = /https:?/;
 
@@ -19355,78 +19330,47 @@ module.exports = function httpAdapter(config) {
 
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("http");;
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ ((module) => {
 
 "use strict";
 module.exports = require("https");;
 
 /***/ }),
-/* 33 */
+/* 34 */
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
-var url = __webpack_require__(34);
+var url = __webpack_require__(5);
 var URL = url.URL;
-var http = __webpack_require__(31);
-var https = __webpack_require__(32);
+var http = __webpack_require__(32);
+var https = __webpack_require__(33);
 var Writable = __webpack_require__(35).Writable;
 var assert = __webpack_require__(36);
 var debug = __webpack_require__(37);
 
-// Whether to use the native URL object or the legacy url module
-var useNativeURL = false;
-try {
-  assert(new URL());
-}
-catch (error) {
-  useNativeURL = error.code === "ERR_INVALID_URL";
-}
-
-// URL fields to preserve in copy operations
-var preservedUrlFields = [
-  "auth",
-  "host",
-  "hostname",
-  "href",
-  "path",
-  "pathname",
-  "port",
-  "protocol",
-  "query",
-  "search",
-  "hash",
-];
-
 // Create handlers that pass events from native requests
-var events = ["abort", "aborted", "connect", "error", "socket", "timeout"];
 var eventHandlers = Object.create(null);
-events.forEach(function (event) {
+["abort", "aborted", "connect", "error", "socket", "timeout"].forEach(function (event) {
   eventHandlers[event] = function (arg1, arg2, arg3) {
     this._redirectable.emit(event, arg1, arg2, arg3);
   };
 });
 
 // Error types with codes
-var InvalidUrlError = createErrorType(
-  "ERR_INVALID_URL",
-  "Invalid URL",
-  TypeError
-);
 var RedirectionError = createErrorType(
   "ERR_FR_REDIRECTION_FAILURE",
-  "Redirected request failed"
+  ""
 );
 var TooManyRedirectsError = createErrorType(
   "ERR_FR_TOO_MANY_REDIRECTS",
-  "Maximum number of redirects exceeded",
-  RedirectionError
+  "Maximum number of redirects exceeded"
 );
 var MaxBodyLengthExceededError = createErrorType(
   "ERR_FR_MAX_BODY_LENGTH_EXCEEDED",
@@ -19436,9 +19380,6 @@ var WriteAfterEndError = createErrorType(
   "ERR_STREAM_WRITE_AFTER_END",
   "write after end"
 );
-
-// istanbul ignore next
-var destroy = Writable.prototype.destroy || noop;
 
 // An HTTP(S) request that can be redirected
 function RedirectableRequest(options, responseCallback) {
@@ -19461,31 +19402,13 @@ function RedirectableRequest(options, responseCallback) {
   // React to responses of native requests
   var self = this;
   this._onNativeResponse = function (response) {
-    try {
-      self._processResponse(response);
-    }
-    catch (cause) {
-      self.emit("error", cause instanceof RedirectionError ?
-        cause : new RedirectionError({ cause: cause }));
-    }
+    self._processResponse(response);
   };
 
   // Perform the first request
   this._performRequest();
 }
 RedirectableRequest.prototype = Object.create(Writable.prototype);
-
-RedirectableRequest.prototype.abort = function () {
-  destroyRequest(this._currentRequest);
-  this._currentRequest.abort();
-  this.emit("abort");
-};
-
-RedirectableRequest.prototype.destroy = function (error) {
-  destroyRequest(this._currentRequest, error);
-  destroy.call(this, error);
-  return this;
-};
 
 // Writes buffered data to the current native request
 RedirectableRequest.prototype.write = function (data, encoding, callback) {
@@ -19495,10 +19418,10 @@ RedirectableRequest.prototype.write = function (data, encoding, callback) {
   }
 
   // Validate input and shift parameters if necessary
-  if (!isString(data) && !isBuffer(data)) {
+  if (!(typeof data === "string" || typeof data === "object" && ("length" in data))) {
     throw new TypeError("data should be a string, Buffer or Uint8Array");
   }
-  if (isFunction(encoding)) {
+  if (typeof encoding === "function") {
     callback = encoding;
     encoding = null;
   }
@@ -19527,11 +19450,11 @@ RedirectableRequest.prototype.write = function (data, encoding, callback) {
 // Ends the current native request
 RedirectableRequest.prototype.end = function (data, encoding, callback) {
   // Shift parameters if necessary
-  if (isFunction(data)) {
+  if (typeof data === "function") {
     callback = data;
     data = encoding = null;
   }
-  else if (isFunction(encoding)) {
+  else if (typeof encoding === "function") {
     callback = encoding;
     encoding = null;
   }
@@ -19566,74 +19489,40 @@ RedirectableRequest.prototype.removeHeader = function (name) {
 
 // Global timeout for all underlying requests
 RedirectableRequest.prototype.setTimeout = function (msecs, callback) {
-  var self = this;
-
-  // Destroys the socket on timeout
-  function destroyOnTimeout(socket) {
-    socket.setTimeout(msecs);
-    socket.removeListener("timeout", socket.destroy);
-    socket.addListener("timeout", socket.destroy);
-  }
-
-  // Sets up a timer to trigger a timeout event
-  function startTimer(socket) {
-    if (self._timeout) {
-      clearTimeout(self._timeout);
-    }
-    self._timeout = setTimeout(function () {
-      self.emit("timeout");
-      clearTimer();
-    }, msecs);
-    destroyOnTimeout(socket);
-  }
-
-  // Stops a timeout from triggering
-  function clearTimer() {
-    // Clear the timeout
-    if (self._timeout) {
-      clearTimeout(self._timeout);
-      self._timeout = null;
-    }
-
-    // Clean up all attached listeners
-    self.removeListener("abort", clearTimer);
-    self.removeListener("error", clearTimer);
-    self.removeListener("response", clearTimer);
-    self.removeListener("close", clearTimer);
-    if (callback) {
-      self.removeListener("timeout", callback);
-    }
-    if (!self.socket) {
-      self._currentRequest.removeListener("socket", startTimer);
-    }
-  }
-
-  // Attach callback if passed
   if (callback) {
-    this.on("timeout", callback);
+    this.once("timeout", callback);
   }
 
-  // Start the timer if or when the socket is opened
   if (this.socket) {
-    startTimer(this.socket);
+    startTimer(this, msecs);
   }
   else {
-    this._currentRequest.once("socket", startTimer);
+    var self = this;
+    this._currentRequest.once("socket", function () {
+      startTimer(self, msecs);
+    });
   }
 
-  // Clean up on events
-  this.on("socket", destroyOnTimeout);
-  this.on("abort", clearTimer);
-  this.on("error", clearTimer);
-  this.on("response", clearTimer);
-  this.on("close", clearTimer);
+  this.once("response", clearTimer);
+  this.once("error", clearTimer);
 
   return this;
 };
 
+function startTimer(request, msecs) {
+  clearTimeout(request._timeout);
+  request._timeout = setTimeout(function () {
+    request.emit("timeout");
+  }, msecs);
+}
+
+function clearTimer() {
+  clearTimeout(this._timeout);
+}
+
 // Proxy all other public ClientRequest methods
 [
-  "flushHeaders", "getHeader",
+  "abort", "flushHeaders", "getHeader",
   "setNoDelay", "setSocketKeepAlive",
 ].forEach(function (method) {
   RedirectableRequest.prototype[method] = function (a, b) {
@@ -19685,36 +19574,35 @@ RedirectableRequest.prototype._performRequest = function () {
   var protocol = this._options.protocol;
   var nativeProtocol = this._options.nativeProtocols[protocol];
   if (!nativeProtocol) {
-    throw new TypeError("Unsupported protocol " + protocol);
+    this.emit("error", new TypeError("Unsupported protocol " + protocol));
+    return;
   }
 
   // If specified, use the agent corresponding to the protocol
   // (HTTP and HTTPS use different types of agents)
   if (this._options.agents) {
-    var scheme = protocol.slice(0, -1);
+    var scheme = protocol.substr(0, protocol.length - 1);
     this._options.agent = this._options.agents[scheme];
   }
 
-  // Create the native request and set up its event handlers
+  // Create the native request
   var request = this._currentRequest =
         nativeProtocol.request(this._options, this._onNativeResponse);
-  request._redirectable = this;
-  for (var event of events) {
-    request.on(event, eventHandlers[event]);
-  }
+  this._currentUrl = url.format(this._options);
 
-  // RFC7230§5.3.1: When making a request directly to an origin server, […]
-  // a client MUST send only the absolute path […] as the request-target.
-  this._currentUrl = /^\//.test(this._options.path) ?
-    url.format(this._options) :
-    // When making a request to a proxy, […]
-    // a client MUST send the target URI in absolute-form […].
-    this._options.path;
+  // Set up event handlers
+  request._redirectable = this;
+  for (var event in eventHandlers) {
+    /* istanbul ignore else */
+    if (event) {
+      request.on(event, eventHandlers[event]);
+    }
+  }
 
   // End a redirected request
   // (The first request must be ended explicitly with RedirectableRequest#end)
   if (this._isRedirect) {
-    // Write the request entity and end
+    // Write the request entity and end.
     var i = 0;
     var self = this;
     var buffers = this._requestBodyBuffers;
@@ -19762,99 +19650,87 @@ RedirectableRequest.prototype._processResponse = function (response) {
   // the user agent MAY automatically redirect its request to the URI
   // referenced by the Location field value,
   // even if the specific status code is not understood.
-
-  // If the response is not a redirect; return it as-is
   var location = response.headers.location;
-  if (!location || this._options.followRedirects === false ||
-      statusCode < 300 || statusCode >= 400) {
+  if (location && this._options.followRedirects !== false &&
+      statusCode >= 300 && statusCode < 400) {
+    // Abort the current request
+    this._currentRequest.removeAllListeners();
+    this._currentRequest.on("error", noop);
+    this._currentRequest.abort();
+    // Discard the remainder of the response to avoid waiting for data
+    response.destroy();
+
+    // RFC7231§6.4: A client SHOULD detect and intervene
+    // in cyclical redirections (i.e., "infinite" redirection loops).
+    if (++this._redirectCount > this._options.maxRedirects) {
+      this.emit("error", new TooManyRedirectsError());
+      return;
+    }
+
+    // RFC7231§6.4: Automatic redirection needs to done with
+    // care for methods not known to be safe, […]
+    // RFC7231§6.4.2–3: For historical reasons, a user agent MAY change
+    // the request method from POST to GET for the subsequent request.
+    if ((statusCode === 301 || statusCode === 302) && this._options.method === "POST" ||
+        // RFC7231§6.4.4: The 303 (See Other) status code indicates that
+        // the server is redirecting the user agent to a different resource […]
+        // A user agent can perform a retrieval request targeting that URI
+        // (a GET or HEAD request if using HTTP) […]
+        (statusCode === 303) && !/^(?:GET|HEAD)$/.test(this._options.method)) {
+      this._options.method = "GET";
+      // Drop a possible entity and headers related to it
+      this._requestBodyBuffers = [];
+      removeMatchingHeaders(/^content-/i, this._options.headers);
+    }
+
+    // Drop the Host header, as the redirect might lead to a different host
+    var previousHostName = removeMatchingHeaders(/^host$/i, this._options.headers) ||
+      url.parse(this._currentUrl).hostname;
+
+    // Create the redirected request
+    var redirectUrl = url.resolve(this._currentUrl, location);
+    debug("redirecting to", redirectUrl);
+    this._isRedirect = true;
+    var redirectUrlParts = url.parse(redirectUrl);
+    Object.assign(this._options, redirectUrlParts);
+
+    // Drop the Authorization header if redirecting to another host
+    if (redirectUrlParts.hostname !== previousHostName) {
+      removeMatchingHeaders(/^authorization$/i, this._options.headers);
+    }
+
+    // Evaluate the beforeRedirect callback
+    if (typeof this._options.beforeRedirect === "function") {
+      var responseDetails = { headers: response.headers };
+      try {
+        this._options.beforeRedirect.call(null, this._options, responseDetails);
+      }
+      catch (err) {
+        this.emit("error", err);
+        return;
+      }
+      this._sanitizeOptions(this._options);
+    }
+
+    // Perform the redirected request
+    try {
+      this._performRequest();
+    }
+    catch (cause) {
+      var error = new RedirectionError("Redirected request failed: " + cause.message);
+      error.cause = cause;
+      this.emit("error", error);
+    }
+  }
+  else {
+    // The response is not a redirect; return it as-is
     response.responseUrl = this._currentUrl;
     response.redirects = this._redirects;
     this.emit("response", response);
 
     // Clean up
     this._requestBodyBuffers = [];
-    return;
   }
-
-  // The response is a redirect, so abort the current request
-  destroyRequest(this._currentRequest);
-  // Discard the remainder of the response to avoid waiting for data
-  response.destroy();
-
-  // RFC7231§6.4: A client SHOULD detect and intervene
-  // in cyclical redirections (i.e., "infinite" redirection loops).
-  if (++this._redirectCount > this._options.maxRedirects) {
-    throw new TooManyRedirectsError();
-  }
-
-  // Store the request headers if applicable
-  var requestHeaders;
-  var beforeRedirect = this._options.beforeRedirect;
-  if (beforeRedirect) {
-    requestHeaders = Object.assign({
-      // The Host header was set by nativeProtocol.request
-      Host: response.req.getHeader("host"),
-    }, this._options.headers);
-  }
-
-  // RFC7231§6.4: Automatic redirection needs to done with
-  // care for methods not known to be safe, […]
-  // RFC7231§6.4.2–3: For historical reasons, a user agent MAY change
-  // the request method from POST to GET for the subsequent request.
-  var method = this._options.method;
-  if ((statusCode === 301 || statusCode === 302) && this._options.method === "POST" ||
-      // RFC7231§6.4.4: The 303 (See Other) status code indicates that
-      // the server is redirecting the user agent to a different resource […]
-      // A user agent can perform a retrieval request targeting that URI
-      // (a GET or HEAD request if using HTTP) […]
-      (statusCode === 303) && !/^(?:GET|HEAD)$/.test(this._options.method)) {
-    this._options.method = "GET";
-    // Drop a possible entity and headers related to it
-    this._requestBodyBuffers = [];
-    removeMatchingHeaders(/^content-/i, this._options.headers);
-  }
-
-  // Drop the Host header, as the redirect might lead to a different host
-  var currentHostHeader = removeMatchingHeaders(/^host$/i, this._options.headers);
-
-  // If the redirect is relative, carry over the host of the last request
-  var currentUrlParts = parseUrl(this._currentUrl);
-  var currentHost = currentHostHeader || currentUrlParts.host;
-  var currentUrl = /^\w+:/.test(location) ? this._currentUrl :
-    url.format(Object.assign(currentUrlParts, { host: currentHost }));
-
-  // Create the redirected request
-  var redirectUrl = resolveUrl(location, currentUrl);
-  debug("redirecting to", redirectUrl.href);
-  this._isRedirect = true;
-  spreadUrlObject(redirectUrl, this._options);
-
-  // Drop confidential headers when redirecting to a less secure protocol
-  // or to a different domain that is not a superdomain
-  if (redirectUrl.protocol !== currentUrlParts.protocol &&
-     redirectUrl.protocol !== "https:" ||
-     redirectUrl.host !== currentHost &&
-     !isSubdomain(redirectUrl.host, currentHost)) {
-    removeMatchingHeaders(/^(?:(?:proxy-)?authorization|cookie)$/i, this._options.headers);
-  }
-
-  // Evaluate the beforeRedirect callback
-  if (isFunction(beforeRedirect)) {
-    var responseDetails = {
-      headers: response.headers,
-      statusCode: statusCode,
-    };
-    var requestDetails = {
-      url: currentUrl,
-      method: method,
-      headers: requestHeaders,
-    };
-    beforeRedirect(this._options, responseDetails, requestDetails);
-    this._sanitizeOptions(this._options);
-  }
-
-  // Perform the redirected request
-  this._performRequest();
 };
 
 // Wraps the key/value object of protocols with redirect functionality
@@ -19874,19 +19750,26 @@ function wrap(protocols) {
 
     // Executes a request, following redirects
     function request(input, options, callback) {
-      // Parse parameters, ensuring that input is an object
-      if (isURL(input)) {
-        input = spreadUrlObject(input);
+      // Parse parameters
+      if (typeof input === "string") {
+        var urlStr = input;
+        try {
+          input = urlToOptions(new URL(urlStr));
+        }
+        catch (err) {
+          /* istanbul ignore next */
+          input = url.parse(urlStr);
+        }
       }
-      else if (isString(input)) {
-        input = spreadUrlObject(parseUrl(input));
+      else if (URL && (input instanceof URL)) {
+        input = urlToOptions(input);
       }
       else {
         callback = options;
-        options = validateUrl(input);
+        options = input;
         input = { protocol: protocol };
       }
-      if (isFunction(options)) {
+      if (typeof options === "function") {
         callback = options;
         options = null;
       }
@@ -19897,9 +19780,6 @@ function wrap(protocols) {
         maxBodyLength: exports.maxBodyLength,
       }, input, options);
       options.nativeProtocols = nativeProtocols;
-      if (!isString(options.host) && !isString(options.hostname)) {
-        options.hostname = "::1";
-      }
 
       assert.equal(options.protocol, protocol, "protocol mismatch");
       debug("options", options);
@@ -19922,57 +19802,27 @@ function wrap(protocols) {
   return exports;
 }
 
+/* istanbul ignore next */
 function noop() { /* empty */ }
 
-function parseUrl(input) {
-  var parsed;
-  /* istanbul ignore else */
-  if (useNativeURL) {
-    parsed = new URL(input);
+// from https://github.com/nodejs/node/blob/master/lib/internal/url.js
+function urlToOptions(urlObject) {
+  var options = {
+    protocol: urlObject.protocol,
+    hostname: urlObject.hostname.startsWith("[") ?
+      /* istanbul ignore next */
+      urlObject.hostname.slice(1, -1) :
+      urlObject.hostname,
+    hash: urlObject.hash,
+    search: urlObject.search,
+    pathname: urlObject.pathname,
+    path: urlObject.pathname + urlObject.search,
+    href: urlObject.href,
+  };
+  if (urlObject.port !== "") {
+    options.port = Number(urlObject.port);
   }
-  else {
-    // Ensure the URL is valid and absolute
-    parsed = validateUrl(url.parse(input));
-    if (!isString(parsed.protocol)) {
-      throw new InvalidUrlError({ input });
-    }
-  }
-  return parsed;
-}
-
-function resolveUrl(relative, base) {
-  /* istanbul ignore next */
-  return useNativeURL ? new URL(relative, base) : parseUrl(url.resolve(base, relative));
-}
-
-function validateUrl(input) {
-  if (/^\[/.test(input.hostname) && !/^\[[:0-9a-f]+\]$/i.test(input.hostname)) {
-    throw new InvalidUrlError({ input: input.href || input });
-  }
-  if (/^\[/.test(input.host) && !/^\[[:0-9a-f]+\](:\d+)?$/i.test(input.host)) {
-    throw new InvalidUrlError({ input: input.href || input });
-  }
-  return input;
-}
-
-function spreadUrlObject(urlObject, target) {
-  var spread = target || {};
-  for (var key of preservedUrlFields) {
-    spread[key] = urlObject[key];
-  }
-
-  // Fix IPv6 hostname
-  if (spread.hostname.startsWith("[")) {
-    spread.hostname = spread.hostname.slice(1, -1);
-  }
-  // Ensure port is a number
-  if (spread.port !== "") {
-    spread.port = Number(spread.port);
-  }
-  // Concatenate path
-  spread.path = spread.search ? spread.pathname + spread.search : spread.pathname;
-
-  return spread;
+  return options;
 }
 
 function removeMatchingHeaders(regex, headers) {
@@ -19983,75 +19833,25 @@ function removeMatchingHeaders(regex, headers) {
       delete headers[header];
     }
   }
-  return (lastValue === null || typeof lastValue === "undefined") ?
-    undefined : String(lastValue).trim();
+  return lastValue;
 }
 
-function createErrorType(code, message, baseClass) {
-  // Create constructor
-  function CustomError(properties) {
+function createErrorType(code, defaultMessage) {
+  function CustomError(message) {
     Error.captureStackTrace(this, this.constructor);
-    Object.assign(this, properties || {});
-    this.code = code;
-    this.message = this.cause ? message + ": " + this.cause.message : message;
+    this.message = message || defaultMessage;
   }
-
-  // Attach constructor and set default properties
-  CustomError.prototype = new (baseClass || Error)();
-  Object.defineProperties(CustomError.prototype, {
-    constructor: {
-      value: CustomError,
-      enumerable: false,
-    },
-    name: {
-      value: "Error [" + code + "]",
-      enumerable: false,
-    },
-  });
+  CustomError.prototype = new Error();
+  CustomError.prototype.constructor = CustomError;
+  CustomError.prototype.name = "Error [" + code + "]";
+  CustomError.prototype.code = code;
   return CustomError;
-}
-
-function destroyRequest(request, error) {
-  for (var event of events) {
-    request.removeListener(event, eventHandlers[event]);
-  }
-  request.on("error", noop);
-  request.destroy(error);
-}
-
-function isSubdomain(subdomain, domain) {
-  assert(isString(subdomain) && isString(domain));
-  var dot = subdomain.length - domain.length - 1;
-  return dot > 0 && subdomain[dot] === "." && subdomain.endsWith(domain);
-}
-
-function isString(value) {
-  return typeof value === "string" || value instanceof String;
-}
-
-function isFunction(value) {
-  return typeof value === "function";
-}
-
-function isBuffer(value) {
-  return typeof value === "object" && ("length" in value);
-}
-
-function isURL(value) {
-  return URL && value instanceof URL;
 }
 
 // Exports
 module.exports = wrap({ http: http, https: https });
 module.exports.wrap = wrap;
 
-
-/***/ }),
-/* 34 */
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("url");;
 
 /***/ }),
 /* 35 */
@@ -20079,8 +19879,7 @@ module.exports = function () {
       /* eslint global-require: off */
       debug = __webpack_require__(38)("follow-redirects");
     }
-    catch (error) { /* */ }
-    if (typeof debug !== "function") {
+    catch (error) {
       debug = function () { /* */ };
     }
   }
@@ -20419,7 +20218,7 @@ function setup(env) {
 
 	/**
 	* Selects a color for a debug namespace
-	* @param {String} namespace The namespace string for the debug instance to be colored
+	* @param {String} namespace The namespace string for the for the debug instance to be colored
 	* @return {Number|String} An ANSI color code for the given namespace
 	* @api private
 	*/
@@ -20445,8 +20244,6 @@ function setup(env) {
 	function createDebug(namespace) {
 		let prevTime;
 		let enableOverride = null;
-		let namespacesCache;
-		let enabledCache;
 
 		function debug(...args) {
 			// Disabled?
@@ -20507,17 +20304,7 @@ function setup(env) {
 		Object.defineProperty(debug, 'enabled', {
 			enumerable: true,
 			configurable: false,
-			get: () => {
-				if (enableOverride !== null) {
-					return enableOverride;
-				}
-				if (namespacesCache !== createDebug.namespaces) {
-					namespacesCache = createDebug.namespaces;
-					enabledCache = createDebug.enabled(namespace);
-				}
-
-				return enabledCache;
-			},
+			get: () => enableOverride === null ? createDebug.enabled(namespace) : enableOverride,
 			set: v => {
 				enableOverride = v;
 			}
@@ -20546,7 +20333,6 @@ function setup(env) {
 	*/
 	function enable(namespaces) {
 		createDebug.save(namespaces);
-		createDebug.namespaces = namespaces;
 
 		createDebug.names = [];
 		createDebug.skips = [];
@@ -20564,7 +20350,7 @@ function setup(env) {
 			namespaces = split[i].replace(/\*/g, '.*?');
 
 			if (namespaces[0] === '-') {
-				createDebug.skips.push(new RegExp('^' + namespaces.slice(1) + '$'));
+				createDebug.skips.push(new RegExp('^' + namespaces.substr(1) + '$'));
 			} else {
 				createDebug.names.push(new RegExp('^' + namespaces + '$'));
 			}
@@ -21020,11 +20806,11 @@ function getDate() {
 }
 
 /**
- * Invokes `util.formatWithOptions()` with the specified arguments and writes to stderr.
+ * Invokes `util.format()` with the specified arguments and writes to stderr.
  */
 
 function log(...args) {
-	return process.stderr.write(util.formatWithOptions(exports.inspectOpts, ...args) + '\n');
+	return process.stderr.write(util.format(...args) + '\n');
 }
 
 /**
@@ -21275,7 +21061,7 @@ module.exports = require("zlib");;
 /***/ ((module) => {
 
 "use strict";
-module.exports = JSON.parse("{\"_from\":\"axios@0.21.1\",\"_id\":\"axios@0.21.1\",\"_inBundle\":false,\"_integrity\":\"sha512-dKQiRHxGD9PPRIUNIWvZhPTPpl1rf/OxTYKsqKUDjBwYylTvV7SjSHJb9ratfyzM6wCdLCOYLzs73qpg5c4iGA==\",\"_location\":\"/axios\",\"_phantomChildren\":{},\"_requested\":{\"type\":\"version\",\"registry\":true,\"raw\":\"axios@0.21.1\",\"name\":\"axios\",\"escapedName\":\"axios\",\"rawSpec\":\"0.21.1\",\"saveSpec\":null,\"fetchSpec\":\"0.21.1\"},\"_requiredBy\":[\"/\"],\"_resolved\":\"https://registry.npmjs.org/axios/-/axios-0.21.1.tgz\",\"_shasum\":\"22563481962f4d6bde9a76d516ef0e5d3c09b2b8\",\"_spec\":\"axios@0.21.1\",\"_where\":\"/Users/dw/repos/Fliplet/fliplet-vscode-extension\",\"author\":{\"name\":\"Matt Zabriskie\"},\"browser\":{\"./lib/adapters/http.js\":\"./lib/adapters/xhr.js\"},\"bugs\":{\"url\":\"https://github.com/axios/axios/issues\"},\"bundleDependencies\":false,\"bundlesize\":[{\"path\":\"./dist/axios.min.js\",\"threshold\":\"5kB\"}],\"dependencies\":{\"follow-redirects\":\"^1.10.0\"},\"deprecated\":false,\"description\":\"Promise based HTTP client for the browser and node.js\",\"devDependencies\":{\"bundlesize\":\"^0.17.0\",\"coveralls\":\"^3.0.0\",\"es6-promise\":\"^4.2.4\",\"grunt\":\"^1.0.2\",\"grunt-banner\":\"^0.6.0\",\"grunt-cli\":\"^1.2.0\",\"grunt-contrib-clean\":\"^1.1.0\",\"grunt-contrib-watch\":\"^1.0.0\",\"grunt-eslint\":\"^20.1.0\",\"grunt-karma\":\"^2.0.0\",\"grunt-mocha-test\":\"^0.13.3\",\"grunt-ts\":\"^6.0.0-beta.19\",\"grunt-webpack\":\"^1.0.18\",\"istanbul-instrumenter-loader\":\"^1.0.0\",\"jasmine-core\":\"^2.4.1\",\"karma\":\"^1.3.0\",\"karma-chrome-launcher\":\"^2.2.0\",\"karma-coverage\":\"^1.1.1\",\"karma-firefox-launcher\":\"^1.1.0\",\"karma-jasmine\":\"^1.1.1\",\"karma-jasmine-ajax\":\"^0.1.13\",\"karma-opera-launcher\":\"^1.0.0\",\"karma-safari-launcher\":\"^1.0.0\",\"karma-sauce-launcher\":\"^1.2.0\",\"karma-sinon\":\"^1.0.5\",\"karma-sourcemap-loader\":\"^0.3.7\",\"karma-webpack\":\"^1.7.0\",\"load-grunt-tasks\":\"^3.5.2\",\"minimist\":\"^1.2.0\",\"mocha\":\"^5.2.0\",\"sinon\":\"^4.5.0\",\"typescript\":\"^2.8.1\",\"url-search-params\":\"^0.10.0\",\"webpack\":\"^1.13.1\",\"webpack-dev-server\":\"^1.14.1\"},\"homepage\":\"https://github.com/axios/axios\",\"jsdelivr\":\"dist/axios.min.js\",\"keywords\":[\"xhr\",\"http\",\"ajax\",\"promise\",\"node\"],\"license\":\"MIT\",\"main\":\"index.js\",\"name\":\"axios\",\"repository\":{\"type\":\"git\",\"url\":\"git+https://github.com/axios/axios.git\"},\"scripts\":{\"build\":\"NODE_ENV=production grunt build\",\"coveralls\":\"cat coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js\",\"examples\":\"node ./examples/server.js\",\"fix\":\"eslint --fix lib/**/*.js\",\"postversion\":\"git push && git push --tags\",\"preversion\":\"npm test\",\"start\":\"node ./sandbox/server.js\",\"test\":\"grunt test && bundlesize\",\"version\":\"npm run build && grunt version && git add -A dist && git add CHANGELOG.md bower.json package.json\"},\"typings\":\"./index.d.ts\",\"unpkg\":\"dist/axios.min.js\",\"version\":\"0.21.1\"}");
+module.exports = JSON.parse("{\"name\":\"axios\",\"version\":\"0.21.1\",\"description\":\"Promise based HTTP client for the browser and node.js\",\"main\":\"index.js\",\"scripts\":{\"test\":\"grunt test && bundlesize\",\"start\":\"node ./sandbox/server.js\",\"build\":\"NODE_ENV=production grunt build\",\"preversion\":\"npm test\",\"version\":\"npm run build && grunt version && git add -A dist && git add CHANGELOG.md bower.json package.json\",\"postversion\":\"git push && git push --tags\",\"examples\":\"node ./examples/server.js\",\"coveralls\":\"cat coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js\",\"fix\":\"eslint --fix lib/**/*.js\"},\"repository\":{\"type\":\"git\",\"url\":\"https://github.com/axios/axios.git\"},\"keywords\":[\"xhr\",\"http\",\"ajax\",\"promise\",\"node\"],\"author\":\"Matt Zabriskie\",\"license\":\"MIT\",\"bugs\":{\"url\":\"https://github.com/axios/axios/issues\"},\"homepage\":\"https://github.com/axios/axios\",\"devDependencies\":{\"bundlesize\":\"^0.17.0\",\"coveralls\":\"^3.0.0\",\"es6-promise\":\"^4.2.4\",\"grunt\":\"^1.0.2\",\"grunt-banner\":\"^0.6.0\",\"grunt-cli\":\"^1.2.0\",\"grunt-contrib-clean\":\"^1.1.0\",\"grunt-contrib-watch\":\"^1.0.0\",\"grunt-eslint\":\"^20.1.0\",\"grunt-karma\":\"^2.0.0\",\"grunt-mocha-test\":\"^0.13.3\",\"grunt-ts\":\"^6.0.0-beta.19\",\"grunt-webpack\":\"^1.0.18\",\"istanbul-instrumenter-loader\":\"^1.0.0\",\"jasmine-core\":\"^2.4.1\",\"karma\":\"^1.3.0\",\"karma-chrome-launcher\":\"^2.2.0\",\"karma-coverage\":\"^1.1.1\",\"karma-firefox-launcher\":\"^1.1.0\",\"karma-jasmine\":\"^1.1.1\",\"karma-jasmine-ajax\":\"^0.1.13\",\"karma-opera-launcher\":\"^1.0.0\",\"karma-safari-launcher\":\"^1.0.0\",\"karma-sauce-launcher\":\"^1.2.0\",\"karma-sinon\":\"^1.0.5\",\"karma-sourcemap-loader\":\"^0.3.7\",\"karma-webpack\":\"^1.7.0\",\"load-grunt-tasks\":\"^3.5.2\",\"minimist\":\"^1.2.0\",\"mocha\":\"^5.2.0\",\"sinon\":\"^4.5.0\",\"typescript\":\"^2.8.1\",\"url-search-params\":\"^0.10.0\",\"webpack\":\"^1.13.1\",\"webpack-dev-server\":\"^1.14.1\"},\"browser\":{\"./lib/adapters/http.js\":\"./lib/adapters/xhr.js\"},\"jsdelivr\":\"dist/axios.min.js\",\"unpkg\":\"dist/axios.min.js\",\"typings\":\"./index.d.ts\",\"dependencies\":{\"follow-redirects\":\"^1.10.0\"},\"bundlesize\":[{\"path\":\"./dist/axios.min.js\",\"threshold\":\"5kB\"}]}");
 
 /***/ }),
 /* 49 */
@@ -21284,7 +21070,7 @@ module.exports = JSON.parse("{\"_from\":\"axios@0.21.1\",\"_id\":\"axios@0.21.1\
 "use strict";
 
 
-var utils = __webpack_require__(10);
+var utils = __webpack_require__(11);
 
 /**
  * Config-specific merge-function which creates a new config-object
@@ -21535,10 +21321,10 @@ const fs = __webpack_require__(2);
 const path = __webpack_require__(3);
 const os = __webpack_require__(4);
 const moment = __webpack_require__(55);
-const _ = __webpack_require__(5);
+const _ = __webpack_require__(6);
 const md5 = __webpack_require__(192);
-const api = __webpack_require__(7);
-const state = __webpack_require__(6);
+const api = __webpack_require__(8);
+const state = __webpack_require__(7);
 var util;
 (function (util) {
     function handleResult(resolve, reject, error, result) {
@@ -43607,8 +43393,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.DependencyExplorer = exports.DependencyProvider = void 0;
 const vscode = __webpack_require__(1);
-const _ = __webpack_require__(5);
-const state = __webpack_require__(6);
+const _ = __webpack_require__(6);
+const state = __webpack_require__(7);
 class DependencyProvider {
     constructor() {
         this._onDidChangeTreeData = new vscode.EventEmitter();

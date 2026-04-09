@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { URLSearchParams } from "url";
 
 const _ = require("lodash");
 
@@ -34,15 +35,27 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage(err);
   }
 
-  // Register a URI handler for the authentication callback
+  // Register a URI handler for the authentication callback.
+  // The unified Fliplet sign-in page navigates to this URI on success
+  // with the auth token in the query string: ?token=<token>&user=<base64-json>
   vscode.window.registerUriHandler({
     handleUri: function (uri) {
-      // Add your code for what to do when the authentication completes here.
-      if (uri.path.indexOf("/auth-complete") === 0) {
-        const authToken = uri.query.replace("auth_token=", "") as string;
-
-        return verify(authToken);
+      if (uri.path.indexOf("/auth-complete") !== 0) {
+        return;
       }
+
+      // Parse query string properly (handles multiple params + URL-encoding).
+      const params = new URLSearchParams(uri.query);
+      const authToken = params.get("token");
+
+      if (!authToken) {
+        vscode.window.showErrorMessage(
+          "Fliplet sign-in failed: no token returned from the sign-in flow."
+        );
+        return;
+      }
+
+      return verify(authToken);
     },
   });
 
@@ -55,10 +68,15 @@ export async function activate(context: vscode.ExtensionContext) {
         )
       );
 
+      // Unified sign-in flow — replaces the legacy /v1/auth/third-party
+      // endpoint. The Fliplet API page validates the callback URL against
+      // an allow-list (vscode://, cursor://, etc) and on success navigates
+      // the browser to <callback>?token=XXX&user=<base64-json>.
       const uri = vscode.Uri.parse(
-        `${api.baseURL()}v1/auth/third-party?redirect=${encodeURIComponent(
-          callbackUri.toString()
-        )}&responseType=code&source=VSCode&title=Sign%20in%20to%20Authorize%20Visual%20Studio%20Code`
+        `${api.baseURL()}v1/auth/login`
+          + `?return=callback`
+          + `&callback=${encodeURIComponent(callbackUri.toString())}`
+          + `&source=VSCode`
       );
 
       vscode.env.openExternal(uri);
