@@ -40,7 +40,12 @@ export async function activate(context: vscode.ExtensionContext) {
       // Add your code for what to do when the authentication completes here.
       if (uri.path.indexOf("/auth-complete") === 0) {
         const params = new URLSearchParams(uri.query);
-        const authToken = params.get("token") as string;
+        const authToken = params.get("token");
+
+        if (!authToken) {
+          vscode.window.showErrorMessage("Fliplet sign-in failed: no token returned from the sign-in flow.");
+          return;
+        }
 
         return verify(authToken);
       }
@@ -59,7 +64,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const uri = vscode.Uri.parse(
         `${api.baseURL()}v1/auth/login?return=callback&callback=${encodeURIComponent(
           callbackUri.toString()
-        )}`
+        )}&source=VSCode`
       );
 
       vscode.env.openExternal(uri);
