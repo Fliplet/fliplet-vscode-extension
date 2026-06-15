@@ -39,7 +39,8 @@ export async function activate(context: vscode.ExtensionContext) {
     handleUri: function (uri) {
       // Add your code for what to do when the authentication completes here.
       if (uri.path.indexOf("/auth-complete") === 0) {
-        const authToken = uri.query.replace("auth_token=", "") as string;
+        const params = new URLSearchParams(uri.query);
+        const authToken = params.get("token") as string;
 
         return verify(authToken);
       }
@@ -56,9 +57,9 @@ export async function activate(context: vscode.ExtensionContext) {
       );
 
       const uri = vscode.Uri.parse(
-        `${api.baseURL()}v1/auth/third-party?redirect=${encodeURIComponent(
+        `${api.baseURL()}v1/auth/login?return=callback&callback=${encodeURIComponent(
           callbackUri.toString()
-        )}&responseType=code&source=VSCode&title=Sign%20in%20to%20Authorize%20Visual%20Studio%20Code`
+        )}`
       );
 
       vscode.env.openExternal(uri);
